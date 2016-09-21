@@ -1400,7 +1400,7 @@ GET /kapacitor/v1/config
 
 ```json
 {
-    "influxdb: [
+    "influxdb": [
         {
             "name": "localhost",
             "urls": ["http://localhost:8086"],
@@ -1447,7 +1447,7 @@ GET /kapacitor/v1/config/smtp
     "password": true,
     "no-verify": false,
     "global": false,
-    "to": [ "oncall@example.com"],
+    "to": ["oncall@example.com"],
     "from": "kapacitor@example.com",
     "idle-timeout": "30s"
 }
