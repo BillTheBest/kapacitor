@@ -1404,14 +1404,14 @@ GET /kapacitor/v1/config
         {
             "name": "localhost",
             "urls": ["http://localhost:8086"],
-            "default": true
+            "default": true,
             "username": "",
             "password": false
         },
         {
             "name": "remote",
             "urls": ["http://influxdb.example.com:8086"],
-            "default": false
+            "default": false,
             "username": "jim",
             "password": true
         }
