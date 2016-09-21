@@ -1455,6 +1455,11 @@ GET /kapacitor/v1/config/smtp
 
 >NOTE: The password value is not returned, but the `true` value indicates that a non empty password has been set.
 
+#### Response
+
+| Code | Meaning |
+| ---- | ------- |
+| 200  | Success |
 
 ### Overriding the configuration
 
@@ -1549,6 +1554,13 @@ POST /kapacitor/v1/config/influxdb/example
     ]
 }
 ```
+
+#### Response
+
+| Code | Meaning                                                   |
+| ---- | -------                                                   |
+| 200  | Success                                                   |
+| 404  | The specified configuration section/option does not exist |
 
 ## Miscellaneous
 
