@@ -44,27 +44,27 @@ type Config struct {
 	Replay   replay.Config     `toml:"replay"`
 	Storage  storage.Config    `toml:"storage"`
 	Task     task_store.Config `toml:"task"`
-	InfluxDB []influxdb.Config `toml:"influxdb"`
+	InfluxDB []influxdb.Config `toml:"influxdb" co:"influxdb"`
 	Logging  logging.Config    `toml:"logging"`
 
 	Graphites []graphite.Config `toml:"graphite"`
 	Collectd  collectd.Config   `toml:"collectd"`
 	OpenTSDB  opentsdb.Config   `toml:"opentsdb"`
 	UDPs      []udp.Config      `toml:"udp"`
-	SMTP      smtp.Config       `toml:"smtp"`
-	OpsGenie  opsgenie.Config   `toml:"opsgenie"`
-	VictorOps victorops.Config  `toml:"victorops"`
-	PagerDuty pagerduty.Config  `toml:"pagerduty"`
-	Sensu     sensu.Config      `toml:"sensu"`
-	Slack     slack.Config      `toml:"slack"`
-	Telegram  telegram.Config   `toml:"telegram"`
-	HipChat   hipchat.Config    `toml:"hipchat"`
-	Alerta    alerta.Config     `toml:"alerta"`
+	SMTP      smtp.Config       `toml:"smtp" co:"smtp"`
+	OpsGenie  opsgenie.Config   `toml:"opsgenie" co:"opsgenie"`
+	VictorOps victorops.Config  `toml:"victorops" co:"opsgenie"`
+	PagerDuty pagerduty.Config  `toml:"pagerduty" co:"pagerduty"`
+	Sensu     sensu.Config      `toml:"sensu" co:"sensu"`
+	Slack     slack.Config      `toml:"slack" co:"slack"`
+	Telegram  telegram.Config   `toml:"telegram" co:"telegram"`
+	HipChat   hipchat.Config    `toml:"hipchat" co:"hipchat"`
+	Alerta    alerta.Config     `toml:"alerta" co:"alerta"`
+	Talk      talk.Config       `toml:"talk" co:"talk"`
 	Reporting reporting.Config  `toml:"reporting"`
 	Stats     stats.Config      `toml:"stats"`
 	UDF       udf.Config        `toml:"udf"`
 	Deadman   deadman.Config    `toml:"deadman"`
-	Talk      talk.Config       `toml:"talk"`
 
 	Hostname string `toml:"hostname"`
 	DataDir  string `toml:"data_dir"`

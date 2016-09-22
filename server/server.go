@@ -20,6 +20,7 @@ import (
 	"github.com/influxdata/kapacitor/auth"
 	iclient "github.com/influxdata/kapacitor/influxdb"
 	"github.com/influxdata/kapacitor/services/alerta"
+	"github.com/influxdata/kapacitor/services/config"
 	"github.com/influxdata/kapacitor/services/deadman"
 	"github.com/influxdata/kapacitor/services/hipchat"
 	"github.com/influxdata/kapacitor/services/httpd"
@@ -69,12 +70,13 @@ type Server struct {
 	TaskMaster       *kapacitor.TaskMaster
 	TaskMasterLookup *kapacitor.TaskMasterLookup
 
-	AuthService     auth.Interface
-	HTTPDService    *httpd.Service
-	StorageService  *storage.Service
-	TaskStore       *task_store.Service
-	ReplayService   *replay.Service
-	InfluxDBService *influxdb.Service
+	AuthService           auth.Interface
+	HTTPDService          *httpd.Service
+	StorageService        *storage.Service
+	TaskStore             *task_store.Service
+	ReplayService         *replay.Service
+	InfluxDBService       *influxdb.Service
+	ConfigOverrideService *config.Service
 
 	MetaClient    *kapacitor.NoopMetaClient
 	QueryExecutor *Queryexecutor
@@ -83,6 +85,11 @@ type Server struct {
 	Services []Service
 	// Map of service name to index in Services list
 	ServicesByName map[string]int
+
+	// Map of services capable of receiving dynamic configuration updates.
+	DynamicServices map[string]Updater
+	// Channel of incoming configuration updates.
+	configUpdates chan config.ConfigUpdate
 
 	BuildInfo BuildInfo
 	ClusterID string
@@ -109,6 +116,7 @@ func New(c *Config, buildInfo BuildInfo, logService logging.Interface) (*Server,
 		dataDir:        c.DataDir,
 		hostname:       c.Hostname,
 		err:            make(chan error),
+		configUpdates:  make(chan config.ConfigUpdate, 100),
 		LogService:     logService,
 		MetaClient:     &kapacitor.NoopMetaClient{},
 		QueryExecutor:  &Queryexecutor{},
@@ -122,6 +130,7 @@ func New(c *Config, buildInfo BuildInfo, logService logging.Interface) (*Server,
 	if err != nil {
 		return nil, err
 	}
+
 	// Set published vars
 	kapacitor.ClusterIDVar.Set(s.ClusterID)
 	kapacitor.ServerIDVar.Set(s.ServerID)
@@ -144,6 +153,7 @@ func New(c *Config, buildInfo BuildInfo, logService logging.Interface) (*Server,
 	s.appendSMTPService()
 	s.InitHTTPDService()
 	s.appendStorageService()
+	s.appendConfigOverrideService(c)
 	s.appendAuthService()
 	if err := s.appendInfluxDBService(); err != nil {
 		return nil, errors.Wrap(err, "influxdb service")
@@ -197,6 +207,15 @@ func (s *Server) appendStorageService() {
 	s.AppendService("storage", srv)
 }
 
+func (s *Server) appendConfigOverrideService(c *Config) {
+	l := s.LogService.NewLogger("[config] ", log.LstdFlags)
+	srv := config.NewService(c, l, s.configUpdates)
+	srv.StorageService = s.StorageService
+
+	s.ConfigOverrideService = srv
+	s.AppendService("config", srv)
+}
+
 func (s *Server) appendSMTPService() {
 	c := s.config.SMTP
 	if c.Enabled {
@@ -226,6 +245,7 @@ func (s *Server) appendInfluxDBService() error {
 		s.InfluxDBService = srv
 		s.TaskMaster.InfluxDBService = srv
 		s.AppendService("influxdb", srv)
+		s.DynamicServices["influxdb"] = srv
 	}
 	return nil
 }
@@ -304,6 +324,7 @@ func (s *Server) appendOpsGenieService() {
 		s.TaskMaster.OpsGenieService = srv
 
 		s.AppendService("opsgenie", srv)
+		s.DynamicServices["opsgenie"] = srv
 	}
 }
 
@@ -315,6 +336,7 @@ func (s *Server) appendVictorOpsService() {
 		s.TaskMaster.VictorOpsService = srv
 
 		s.AppendService("victorops", srv)
+		s.DynamicServices["victorops"] = srv
 	}
 }
 
@@ -327,6 +349,7 @@ func (s *Server) appendPagerDutyService() {
 		s.TaskMaster.PagerDutyService = srv
 
 		s.AppendService("pagerduty", srv)
+		s.DynamicServices["pagerduty"] = srv
 	}
 }
 
@@ -338,6 +361,7 @@ func (s *Server) appendSensuService() {
 		s.TaskMaster.SensuService = srv
 
 		s.AppendService("sensu", srv)
+		s.DynamicServices["sensu"] = srv
 	}
 }
 
@@ -349,6 +373,7 @@ func (s *Server) appendSlackService() {
 		s.TaskMaster.SlackService = srv
 
 		s.AppendService("slack", srv)
+		s.DynamicServices["slack"] = srv
 	}
 }
 
@@ -360,6 +385,7 @@ func (s *Server) appendTelegramService() {
 		s.TaskMaster.TelegramService = srv
 
 		s.AppendService("telegram", srv)
+		s.DynamicServices["telegram"] = srv
 	}
 }
 
@@ -371,6 +397,7 @@ func (s *Server) appendHipChatService() {
 		s.TaskMaster.HipChatService = srv
 
 		s.AppendService("hipchat", srv)
+		s.DynamicServices["hipchat"] = srv
 	}
 }
 
@@ -382,6 +409,7 @@ func (s *Server) appendAlertaService() {
 		s.TaskMaster.AlertaService = srv
 
 		s.AppendService("alerta", srv)
+		s.DynamicServices["alerta"] = srv
 	}
 }
 
@@ -393,6 +421,7 @@ func (s *Server) appendTalkService() {
 		s.TaskMaster.TalkService = srv
 
 		s.AppendService("talk", srv)
+		s.DynamicServices["talk"] = srv
 	}
 }
 
@@ -492,6 +521,7 @@ func (s *Server) Open() error {
 	}
 
 	go s.watchServices()
+	go s.watchConfigUpdates()
 
 	return nil
 }
@@ -516,6 +546,18 @@ func (s *Server) watchServices() {
 	case err = <-s.HTTPDService.Err():
 	}
 	s.err <- err
+}
+
+func (s *Server) watchConfigUpdates() {
+	for cu := range s.configUpdates {
+		if srv, ok := s.DynamicServices[cu.Name]; !ok {
+			s.logger.Printf("E! got configuration update for unkown service %s", cu.Name)
+		} else {
+			if err := srv.Update(cu.NewConfig); err != nil {
+				s.logger.Printf("E! got error when attempting to update configuration for service %s: %v", cu.Name, err)
+			}
+		}
+	}
 }
 
 // Close shuts down the meta and data stores and all services.
@@ -607,6 +649,11 @@ func (s *Server) writeID(file, id string) error {
 type Service interface {
 	Open() error
 	Close() error
+}
+
+// Updater represents a service that can have its configuration updated while running.
+type Updater interface {
+	Update(c interface{}) error
 }
 
 // prof stores the file locations of active profiles.
