@@ -1,4 +1,4 @@
-package configupdate
+package override
 
 import (
 	"fmt"
@@ -12,14 +12,14 @@ import (
 )
 
 const (
-	structTagKey = "configupdate"
+	structTagKey = "override"
 )
 
 // FieldNameFunc returns the name of a field based on its
 // reflect.StructField description.
 type FieldNameFunc func(reflect.StructField) string
 
-type ConfigUpdater struct {
+type Overrider struct {
 	// original is the original configuration value provided
 	// It is not modified, only copies will be modified.
 	original interface{}
@@ -27,16 +27,16 @@ type ConfigUpdater struct {
 	FieldNameFunc FieldNameFunc
 }
 
-// New ConfigUpdater that will update the given configuration interface.
-func New(config interface{}) *ConfigUpdater {
-	return &ConfigUpdater{
+// New Overrider that will update the given configuration interface.
+func New(config interface{}) *Overrider {
+	return &Overrider{
 		original:      config,
 		FieldNameFunc: RawFieldName,
 	}
 }
 
-// Update a section with values from the set
-func (c *ConfigUpdater) Update(section, name string, set map[string]interface{}) (interface{}, error) {
+// Override a section with values from the set
+func (c *Overrider) Override(section, name string, set map[string]interface{}) (interface{}, error) {
 	if section == "" {
 		return nil, errors.New("section cannot be empty")
 	}

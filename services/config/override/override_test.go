@@ -1,11 +1,11 @@
-package configupdate_test
+package override_test
 
 import (
 	"fmt"
 	"reflect"
 	"testing"
 
-	"github.com/influxdata/kapacitor/services/config/configupdate"
+	"github.com/influxdata/kapacitor/services/config/override"
 	"github.com/mitchellh/copystructure"
 )
 
@@ -37,10 +37,10 @@ type SectionNums struct {
 }
 
 type TestConfig struct {
-	SectionA    SectionA    `configupdate:"section-a"`
-	SectionB    SectionB    `configupdate:"section-b"`
-	SectionC    *SectionC   `configupdate:"section-c"`
-	SectionNums SectionNums `configupdate:"section-nums"`
+	SectionA    SectionA    `override:"section-a"`
+	SectionB    SectionB    `override:"section-b"`
+	SectionC    *SectionC   `override:"section-c"`
+	SectionNums SectionNums `override:"section-nums"`
 }
 
 func ExampleConfigUpdater() {
@@ -57,12 +57,12 @@ func ExampleConfigUpdater() {
 	}
 
 	// Create new ConfigUpdater
-	cu := configupdate.New(config)
+	cu := override.New(config)
 	// Use toml tags to map field names
-	cu.FieldNameFunc = configupdate.TomlFieldName
+	cu.FieldNameFunc = override.TomlFieldName
 
 	// Update options in section-a
-	newSectionA, err := cu.Update("section-a", "", map[string]interface{}{
+	newSectionA, err := cu.Override("section-a", "", map[string]interface{}{
 		"toml-option1": "new option1 value",
 		"toml-option2": "initial option2 value",
 	})
@@ -75,7 +75,7 @@ func ExampleConfigUpdater() {
 	fmt.Println("New SectionA.Option2:", a.Option2)
 
 	// Update options in section-b
-	newSectionB, err := cu.Update("section-b", "", map[string]interface{}{
+	newSectionB, err := cu.Override("section-b", "", map[string]interface{}{
 		"toml-option3": "initial option3 value",
 	})
 	if err != nil {
@@ -86,7 +86,7 @@ func ExampleConfigUpdater() {
 	fmt.Println("New SectionB.Option3:", b.Option3)
 
 	// Update options in section-c
-	newSectionC, err := cu.Update("section-c", "", map[string]interface{}{
+	newSectionC, err := cu.Override("section-c", "", map[string]interface{}{
 		"toml-option4": 586,
 	})
 	if err != nil {
@@ -123,7 +123,7 @@ func TestConfigUpdater_Update(t *testing.T) {
 		name          string
 		set           map[string]interface{}
 		exp           interface{}
-		fieldNameFunc configupdate.FieldNameFunc
+		fieldNameFunc override.FieldNameFunc
 	}{
 		{
 			section: "section-a",
@@ -136,7 +136,7 @@ func TestConfigUpdater_Update(t *testing.T) {
 		},
 		{
 			section:       "section-a",
-			fieldNameFunc: configupdate.TomlFieldName,
+			fieldNameFunc: override.TomlFieldName,
 			set: map[string]interface{}{
 				"toml-option1": "new-o1",
 			},
@@ -146,7 +146,7 @@ func TestConfigUpdater_Update(t *testing.T) {
 		},
 		{
 			section:       "section-a",
-			fieldNameFunc: configupdate.JSONFieldName,
+			fieldNameFunc: override.JSONFieldName,
 			set: map[string]interface{}{
 				"json-option1": "new-o1",
 			},
@@ -630,11 +630,11 @@ func TestConfigUpdater_Update(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		cu := configupdate.New(testConfig)
+		cu := override.New(testConfig)
 		if tc.fieldNameFunc != nil {
 			cu.FieldNameFunc = tc.fieldNameFunc
 		}
-		if newConfig, err := cu.Update(tc.section, tc.name, tc.set); err != nil {
+		if newConfig, err := cu.Override(tc.section, tc.name, tc.set); err != nil {
 			t.Fatal(err)
 		} else if !reflect.DeepEqual(newConfig, tc.exp) {
 			t.Errorf("unexpected newConfig result: got %v exp %v", newConfig, tc.exp)
