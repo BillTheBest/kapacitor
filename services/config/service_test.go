@@ -24,8 +24,8 @@ type SectionB struct {
 }
 
 type TestConfig struct {
-	SectionA SectionA `toml:"section-a" configupdate:"section-a"`
-	SectionB SectionB `toml:"section-b" configupdate:"section-b"`
+	SectionA SectionA `toml:"section-a" override:"section-a"`
+	SectionB SectionB `toml:"section-b" override:"section-b"`
 }
 
 func TestService_handleUpdateRequest(t *testing.T) {
