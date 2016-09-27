@@ -17,7 +17,8 @@ type SectionB struct {
 	Option3 string `toml:"toml-option3" json:"json-option3"`
 }
 type SectionC struct {
-	Option4 int64 `toml:"toml-option4" json:"json-option4"`
+	Option4  int64  `toml:"toml-option4" json:"json-option4"`
+	Password string `toml:"toml-password" json:"json-password" override:",redact"`
 }
 type SectionNums struct {
 	Int   int
@@ -43,7 +44,7 @@ type TestConfig struct {
 	SectionNums SectionNums `override:"section-nums"`
 }
 
-func ExampleConfigUpdater() {
+func ExampleOverrider() {
 	config := &TestConfig{
 		SectionA: SectionA{
 			Option1: "o1",
@@ -56,13 +57,13 @@ func ExampleConfigUpdater() {
 		},
 	}
 
-	// Create new ConfigUpdater
+	// Create new ConfigOverrider
 	cu := override.New(config)
 	// Use toml tags to map field names
-	cu.FieldNameFunc = override.TomlFieldName
+	cu.OptionNameFunc = override.TomlFieldName
 
-	// Update options in section-a
-	newSectionA, err := cu.Override("section-a", "", map[string]interface{}{
+	// Override options in section-a
+	newSectionA, err := cu.Override("section-a", map[string]interface{}{
 		"toml-option1": "new option1 value",
 		"toml-option2": "initial option2 value",
 	})
@@ -70,30 +71,30 @@ func ExampleConfigUpdater() {
 		fmt.Println("ERROR:", err)
 	}
 
-	a := newSectionA.(SectionA)
+	a := newSectionA.Value().(SectionA)
 	fmt.Println("New SectionA.Option1:", a.Option1)
 	fmt.Println("New SectionA.Option2:", a.Option2)
 
-	// Update options in section-b
-	newSectionB, err := cu.Override("section-b", "", map[string]interface{}{
+	// Override options in section-b
+	newSectionB, err := cu.Override("section-b", map[string]interface{}{
 		"toml-option3": "initial option3 value",
 	})
 	if err != nil {
 		fmt.Println("ERROR:", err)
 	}
 
-	b := newSectionB.(SectionB)
+	b := newSectionB.Value().(SectionB)
 	fmt.Println("New SectionB.Option3:", b.Option3)
 
-	// Update options in section-c
-	newSectionC, err := cu.Override("section-c", "", map[string]interface{}{
+	// Override options in section-c
+	newSectionC, err := cu.Override("section-c", map[string]interface{}{
 		"toml-option4": 586,
 	})
 	if err != nil {
 		fmt.Println("ERROR:", err)
 	}
 
-	c := newSectionC.(*SectionC)
+	c := newSectionC.Value().(*SectionC)
 	fmt.Println("New SectionC.Option4:", c.Option4)
 
 	//Output:
@@ -101,10 +102,9 @@ func ExampleConfigUpdater() {
 	// New SectionA.Option2: initial option2 value
 	// New SectionB.Option3: initial option3 value
 	// New SectionC.Option4: 586
-
 }
 
-func TestConfigUpdater_Update(t *testing.T) {
+func TestOverrider_Override(t *testing.T) {
 	testConfig := &TestConfig{
 		SectionA: SectionA{
 			Option1: "o1",
@@ -119,11 +119,11 @@ func TestConfigUpdater_Update(t *testing.T) {
 	}
 
 	testCases := []struct {
-		section       string
-		name          string
-		set           map[string]interface{}
-		exp           interface{}
-		fieldNameFunc override.FieldNameFunc
+		section        string
+		set            map[string]interface{}
+		exp            interface{}
+		redacted       map[string]interface{}
+		optionNameFunc override.OptionNameFunc
 	}{
 		{
 			section: "section-a",
@@ -133,34 +133,51 @@ func TestConfigUpdater_Update(t *testing.T) {
 			exp: SectionA{
 				Option1: "new-o1",
 			},
+			redacted: map[string]interface{}{
+				"Option1": "new-o1",
+				"Option2": "",
+			},
 		},
 		{
-			section:       "section-a",
-			fieldNameFunc: override.TomlFieldName,
+			section:        "section-a",
+			optionNameFunc: override.TomlFieldName,
 			set: map[string]interface{}{
 				"toml-option1": "new-o1",
 			},
 			exp: SectionA{
 				Option1: "new-o1",
 			},
+			redacted: map[string]interface{}{
+				"toml-option1": "new-o1",
+				"toml-option2": "",
+			},
 		},
 		{
-			section:       "section-a",
-			fieldNameFunc: override.JSONFieldName,
+			section:        "section-a",
+			optionNameFunc: override.JSONFieldName,
 			set: map[string]interface{}{
 				"json-option1": "new-o1",
 			},
 			exp: SectionA{
 				Option1: "new-o1",
 			},
+			redacted: map[string]interface{}{
+				"json-option1": "new-o1",
+				"json-option2": "",
+			},
 		},
 		{
-			section: "section-c",
+			section:        "section-c",
+			optionNameFunc: override.TomlFieldName,
 			set: map[string]interface{}{
-				"Option4": 42,
+				"toml-option4": 42,
 			},
 			exp: &SectionC{
 				Option4: 42,
+			},
+			redacted: map[string]interface{}{
+				"toml-option4":  int64(42),
+				"toml-password": false,
 			},
 		},
 		{
@@ -193,6 +210,20 @@ func TestConfigUpdater_Update(t *testing.T) {
 				Float32: float32(42),
 				Float64: float64(42),
 			},
+			redacted: map[string]interface{}{
+				"Int":     int(42),
+				"Int8":    int8(42),
+				"Int16":   int16(42),
+				"Int32":   int32(42),
+				"Int64":   int64(42),
+				"Uint":    uint(42),
+				"Uint8":   uint8(42),
+				"Uint16":  uint16(42),
+				"Uint32":  uint32(42),
+				"Uint64":  uint64(42),
+				"Float32": float32(42),
+				"Float64": float64(42),
+			},
 		},
 		{
 			section: "section-nums",
@@ -224,6 +255,20 @@ func TestConfigUpdater_Update(t *testing.T) {
 				Float32: float32(42),
 				Float64: float64(42),
 			},
+			redacted: map[string]interface{}{
+				"Int":     int(42),
+				"Int8":    int8(42),
+				"Int16":   int16(42),
+				"Int32":   int32(42),
+				"Int64":   int64(42),
+				"Uint":    uint(42),
+				"Uint8":   uint8(42),
+				"Uint16":  uint16(42),
+				"Uint32":  uint32(42),
+				"Uint64":  uint64(42),
+				"Float32": float32(42),
+				"Float64": float64(42),
+			},
 		},
 		{
 			section: "section-nums",
@@ -254,6 +299,20 @@ func TestConfigUpdater_Update(t *testing.T) {
 				Uint64:  uint64(42),
 				Float32: float32(42),
 				Float64: float64(42),
+			},
+			redacted: map[string]interface{}{
+				"Int":     int(42),
+				"Int8":    int8(42),
+				"Int16":   int16(42),
+				"Int32":   int32(42),
+				"Int64":   int64(42),
+				"Uint":    uint(42),
+				"Uint8":   uint8(42),
+				"Uint16":  uint16(42),
+				"Uint32":  uint32(42),
+				"Uint64":  uint64(42),
+				"Float32": float32(42),
+				"Float64": float64(42),
 			},
 		},
 		{
@@ -286,6 +345,20 @@ func TestConfigUpdater_Update(t *testing.T) {
 				Float32: float32(42),
 				Float64: float64(42),
 			},
+			redacted: map[string]interface{}{
+				"Int":     int(42),
+				"Int8":    int8(42),
+				"Int16":   int16(42),
+				"Int32":   int32(42),
+				"Int64":   int64(42),
+				"Uint":    uint(42),
+				"Uint8":   uint8(42),
+				"Uint16":  uint16(42),
+				"Uint32":  uint32(42),
+				"Uint64":  uint64(42),
+				"Float32": float32(42),
+				"Float64": float64(42),
+			},
 		},
 		{
 			section: "section-nums",
@@ -316,6 +389,20 @@ func TestConfigUpdater_Update(t *testing.T) {
 				Uint64:  uint64(42),
 				Float32: float32(42),
 				Float64: float64(42),
+			},
+			redacted: map[string]interface{}{
+				"Int":     int(42),
+				"Int8":    int8(42),
+				"Int16":   int16(42),
+				"Int32":   int32(42),
+				"Int64":   int64(42),
+				"Uint":    uint(42),
+				"Uint8":   uint8(42),
+				"Uint16":  uint16(42),
+				"Uint32":  uint32(42),
+				"Uint64":  uint64(42),
+				"Float32": float32(42),
+				"Float64": float64(42),
 			},
 		},
 		{
@@ -348,6 +435,20 @@ func TestConfigUpdater_Update(t *testing.T) {
 				Float32: float32(42),
 				Float64: float64(42),
 			},
+			redacted: map[string]interface{}{
+				"Int":     int(42),
+				"Int8":    int8(42),
+				"Int16":   int16(42),
+				"Int32":   int32(42),
+				"Int64":   int64(42),
+				"Uint":    uint(42),
+				"Uint8":   uint8(42),
+				"Uint16":  uint16(42),
+				"Uint32":  uint32(42),
+				"Uint64":  uint64(42),
+				"Float32": float32(42),
+				"Float64": float64(42),
+			},
 		},
 		{
 			section: "section-nums",
@@ -378,6 +479,20 @@ func TestConfigUpdater_Update(t *testing.T) {
 				Uint64:  uint64(42),
 				Float32: float32(42),
 				Float64: float64(42),
+			},
+			redacted: map[string]interface{}{
+				"Int":     int(42),
+				"Int8":    int8(42),
+				"Int16":   int16(42),
+				"Int32":   int32(42),
+				"Int64":   int64(42),
+				"Uint":    uint(42),
+				"Uint8":   uint8(42),
+				"Uint16":  uint16(42),
+				"Uint32":  uint32(42),
+				"Uint64":  uint64(42),
+				"Float32": float32(42),
+				"Float64": float64(42),
 			},
 		},
 		{
@@ -410,6 +525,20 @@ func TestConfigUpdater_Update(t *testing.T) {
 				Float32: float32(42),
 				Float64: float64(42),
 			},
+			redacted: map[string]interface{}{
+				"Int":     int(42),
+				"Int8":    int8(42),
+				"Int16":   int16(42),
+				"Int32":   int32(42),
+				"Int64":   int64(42),
+				"Uint":    uint(42),
+				"Uint8":   uint8(42),
+				"Uint16":  uint16(42),
+				"Uint32":  uint32(42),
+				"Uint64":  uint64(42),
+				"Float32": float32(42),
+				"Float64": float64(42),
+			},
 		},
 		{
 			section: "section-nums",
@@ -440,6 +569,20 @@ func TestConfigUpdater_Update(t *testing.T) {
 				Uint64:  uint64(42),
 				Float32: float32(42),
 				Float64: float64(42),
+			},
+			redacted: map[string]interface{}{
+				"Int":     int(42),
+				"Int8":    int8(42),
+				"Int16":   int16(42),
+				"Int32":   int32(42),
+				"Int64":   int64(42),
+				"Uint":    uint(42),
+				"Uint8":   uint8(42),
+				"Uint16":  uint16(42),
+				"Uint32":  uint32(42),
+				"Uint64":  uint64(42),
+				"Float32": float32(42),
+				"Float64": float64(42),
 			},
 		},
 		{
@@ -472,6 +615,20 @@ func TestConfigUpdater_Update(t *testing.T) {
 				Float32: float32(42),
 				Float64: float64(42),
 			},
+			redacted: map[string]interface{}{
+				"Int":     int(42),
+				"Int8":    int8(42),
+				"Int16":   int16(42),
+				"Int32":   int32(42),
+				"Int64":   int64(42),
+				"Uint":    uint(42),
+				"Uint8":   uint8(42),
+				"Uint16":  uint16(42),
+				"Uint32":  uint32(42),
+				"Uint64":  uint64(42),
+				"Float32": float32(42),
+				"Float64": float64(42),
+			},
 		},
 		{
 			section: "section-nums",
@@ -502,6 +659,20 @@ func TestConfigUpdater_Update(t *testing.T) {
 				Uint64:  uint64(42),
 				Float32: float32(42),
 				Float64: float64(42),
+			},
+			redacted: map[string]interface{}{
+				"Int":     int(42),
+				"Int8":    int8(42),
+				"Int16":   int16(42),
+				"Int32":   int32(42),
+				"Int64":   int64(42),
+				"Uint":    uint(42),
+				"Uint8":   uint8(42),
+				"Uint16":  uint16(42),
+				"Uint32":  uint32(42),
+				"Uint64":  uint64(42),
+				"Float32": float32(42),
+				"Float64": float64(42),
 			},
 		},
 		{
@@ -534,6 +705,20 @@ func TestConfigUpdater_Update(t *testing.T) {
 				Float32: float32(42),
 				Float64: float64(42),
 			},
+			redacted: map[string]interface{}{
+				"Int":     int(42),
+				"Int8":    int8(42),
+				"Int16":   int16(42),
+				"Int32":   int32(42),
+				"Int64":   int64(42),
+				"Uint":    uint(42),
+				"Uint8":   uint8(42),
+				"Uint16":  uint16(42),
+				"Uint32":  uint32(42),
+				"Uint64":  uint64(42),
+				"Float32": float32(42),
+				"Float64": float64(42),
+			},
 		},
 		{
 			section: "section-nums",
@@ -564,6 +749,20 @@ func TestConfigUpdater_Update(t *testing.T) {
 				Uint64:  uint64(42),
 				Float32: float32(42),
 				Float64: float64(42),
+			},
+			redacted: map[string]interface{}{
+				"Int":     int(42),
+				"Int8":    int8(42),
+				"Int16":   int16(42),
+				"Int32":   int32(42),
+				"Int64":   int64(42),
+				"Uint":    uint(42),
+				"Uint8":   uint8(42),
+				"Uint16":  uint16(42),
+				"Uint32":  uint32(42),
+				"Uint64":  uint64(42),
+				"Float32": float32(42),
+				"Float64": float64(42),
 			},
 		},
 		{
@@ -596,6 +795,20 @@ func TestConfigUpdater_Update(t *testing.T) {
 				Float32: float32(42),
 				Float64: float64(42),
 			},
+			redacted: map[string]interface{}{
+				"Int":     int(42),
+				"Int8":    int8(42),
+				"Int16":   int16(42),
+				"Int32":   int32(42),
+				"Int64":   int64(42),
+				"Uint":    uint(42),
+				"Uint8":   uint8(42),
+				"Uint16":  uint16(42),
+				"Uint32":  uint32(42),
+				"Uint64":  uint64(42),
+				"Float32": float32(42),
+				"Float64": float64(42),
+			},
 		},
 		{
 			section: "section-nums",
@@ -627,17 +840,55 @@ func TestConfigUpdater_Update(t *testing.T) {
 				Float32: float32(42),
 				Float64: float64(42),
 			},
+			redacted: map[string]interface{}{
+				"Int":     int(42),
+				"Int8":    int8(42),
+				"Int16":   int16(42),
+				"Int32":   int32(42),
+				"Int64":   int64(42),
+				"Uint":    uint(42),
+				"Uint8":   uint8(42),
+				"Uint16":  uint16(42),
+				"Uint32":  uint32(42),
+				"Uint64":  uint64(42),
+				"Float32": float32(42),
+				"Float64": float64(42),
+			},
+		},
+		{
+			section: "section-c",
+			set: map[string]interface{}{
+				"Option4":  42,
+				"Password": "supersecret",
+			},
+			exp: &SectionC{
+				Option4:  int64(42),
+				Password: "supersecret",
+			},
+			redacted: map[string]interface{}{
+				"Option4":  int64(42),
+				"Password": true,
+			},
 		},
 	}
 	for _, tc := range testCases {
 		cu := override.New(testConfig)
-		if tc.fieldNameFunc != nil {
-			cu.FieldNameFunc = tc.fieldNameFunc
+		if tc.optionNameFunc != nil {
+			cu.OptionNameFunc = tc.optionNameFunc
 		}
-		if newConfig, err := cu.Override(tc.section, tc.name, tc.set); err != nil {
+		if newConfig, err := cu.Override(tc.section, tc.set); err != nil {
 			t.Fatal(err)
-		} else if !reflect.DeepEqual(newConfig, tc.exp) {
-			t.Errorf("unexpected newConfig result: got %v exp %v", newConfig, tc.exp)
+		} else {
+			// Validate value
+			if got := newConfig.Value(); !reflect.DeepEqual(got, tc.exp) {
+				t.Errorf("unexpected newConfig.Value result: got %v exp %v", got, tc.exp)
+			}
+			// Validate redacted
+			if got, err := newConfig.Redacted(); err != nil {
+				t.Fatal(err)
+			} else if !reflect.DeepEqual(got, tc.redacted) {
+				t.Errorf("unexpected newConfig.Redacted result: got %v exp %v", got, tc.redacted)
+			}
 		}
 		// Validate original not modified
 		if !reflect.DeepEqual(testConfig, copy) {
