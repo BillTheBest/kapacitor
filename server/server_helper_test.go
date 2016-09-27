@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -19,7 +18,6 @@ import (
 	iclient "github.com/influxdata/influxdb/client/v2"
 	"github.com/influxdata/kapacitor/client/v1"
 	"github.com/influxdata/kapacitor/server"
-	"github.com/influxdata/kapacitor/services/logging"
 	"github.com/influxdata/wlog"
 )
 
@@ -38,7 +36,7 @@ func NewServer(c *server.Config) *Server {
 		Branch:  "testBranch",
 	}
 	c.HTTP.LogEnabled = testing.Verbose()
-	ls := &LogService{}
+	ls := loggingtest.New()
 	srv, err := server.New(c, buildInfo, ls)
 	if err != nil {
 		panic(err)
@@ -201,23 +199,6 @@ func configureLogging() {
 	} else {
 		wlog.SetLevel(wlog.OFF)
 	}
-}
-
-type LogService struct{}
-
-func (l *LogService) NewLogger(prefix string, flag int) *log.Logger {
-	return wlog.New(os.Stderr, prefix, flag)
-}
-func (l *LogService) NewRawLogger(prefix string, flag int) *log.Logger {
-	return log.New(os.Stderr, prefix, flag)
-}
-
-func (l *LogService) NewStaticLevelLogger(prefix string, flag int, level logging.Level) *log.Logger {
-	return log.New(wlog.NewStaticLevelWriter(os.Stderr, wlog.Level(level)), prefix, flag)
-}
-
-func (l *LogService) NewStaticLevelWriter(level logging.Level) io.Writer {
-	return wlog.NewStaticLevelWriter(os.Stderr, wlog.Level(level))
 }
 
 type queryFunc func(q string) *iclient.Response

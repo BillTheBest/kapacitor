@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"errors"
+	"log"
 
 	"github.com/influxdata/kapacitor/services/storage"
 )
@@ -122,7 +123,9 @@ func (d *overrideKV) Set(o Override) error {
 	if err != nil {
 		return err
 	}
-	return nil
+	// Put ID index
+	indexKey := d.overrideIndexKey(idIndex, o.ID)
+	return d.store.Put(indexKey, []byte(o.ID))
 }
 
 func (d *overrideKV) Delete(id string) error {
@@ -143,10 +146,11 @@ func (d *overrideKV) List() ([]Override, error) {
 	if err != nil {
 		return nil, err
 	}
+	log.Println("ids", ids)
 	overrides := make([]Override, len(ids))
 	for i, id := range ids {
 		var err error
-		overrides[i], err = d.Get(id)
+		overrides[i], err = d.Get(string(id.Value))
 		if err != nil {
 			return nil, err
 		}

@@ -1,26 +1,29 @@
-package config
+package config_test
 
 import (
-	"bufio"
-	"bytes"
-	"crypto/tls"
-	"io"
+	"encoding/json"
 	"io/ioutil"
 	"log"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/influxdata/kapacitor/services/config"
+	"github.com/influxdata/kapacitor/services/httpd"
+	"github.com/influxdata/kapacitor/services/httpd/httpdtest"
+	"github.com/influxdata/kapacitor/services/storage/storagetest"
 )
 
 type SectionA struct {
 	Option1 string `toml:"option-1"`
 }
+
 type SectionB struct {
-	Option2 string `toml:"option-2"`
+	Option2  string `toml:"option-2"`
+	Password string `toml:"password" override:",redact"`
 }
 
 type TestConfig struct {
@@ -28,18 +31,27 @@ type TestConfig struct {
 	SectionB SectionB `toml:"section-b" override:"section-b"`
 }
 
-func TestService_handleUpdateRequest(t *testing.T) {
+func OpenNewSerivce(testConfig interface{}, updates chan<- config.ConfigUpdate) (*config.Service, *httpdtest.Server) {
+	service := config.NewService(testConfig, log.New(os.Stderr, "[config] ", log.LstdFlags), updates)
+	service.StorageService = storagetest.New()
+	server := httpdtest.NewServer(true)
+	service.HTTPDService = server
+	if err := service.Open(); err != nil {
+		panic(err)
+	}
+	return service, server
+}
+
+func TestService_UpdateSection(t *testing.T) {
 	testCases := []struct {
 		body    string
 		path    string
-		code    int
 		expName string
 		exp     interface{}
 	}{
 		{
 			body:    `{"set":{"option-1": "new-o1"}}`,
 			path:    "/section-a",
-			code:    http.StatusNoContent,
 			expName: "section-a",
 			exp: SectionA{
 				Option1: "new-o1",
@@ -51,17 +63,26 @@ func TestService_handleUpdateRequest(t *testing.T) {
 			Option1: "o1",
 		},
 	}
-	updates := make(chan ConfigUpdate, len(testCases))
-	service := NewService(testConfig, log.New(os.Stderr, "[handleUpdateRequest] ", log.LstdFlags), updates)
+	updates := make(chan config.ConfigUpdate, len(testCases))
+	service, server := OpenNewSerivce(testConfig, updates)
+	defer server.Close()
+	defer service.Close()
+	basePath := server.Server.URL + httpd.BasePath + "/config"
 	for _, tc := range testCases {
-		r := NewRequest("POST", tc.path, strings.NewReader(tc.body))
-		rr := httptest.NewRecorder()
-
-		service.handleUpdateRequest(rr, r)
+		log.Println("D! PATH", server.Server.URL+tc.path)
+		resp, err := http.Post(basePath+tc.path, "application/json", strings.NewReader(tc.body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		// Validate response
-		if got, exp := rr.Code, http.StatusNoContent; got != exp {
-			t.Errorf("unexpected code: got %d exp %d.\nBody:\n%s", got, exp, rr.Body.String())
+		if got, exp := resp.StatusCode, http.StatusNoContent; got != exp {
+			t.Errorf("unexpected code: got %d exp %d.\nBody:\n%s", got, exp, string(body))
 		}
 
 		// Validate we got the update over the chan
@@ -81,54 +102,170 @@ func TestService_handleUpdateRequest(t *testing.T) {
 	}
 }
 
-func NewRequest(method, target string, body io.Reader) *http.Request {
-	if method == "" {
-		method = "GET"
+func TestService_GetConfig(t *testing.T) {
+	type update struct {
+		Path string
+		Body string
 	}
-	req, err := http.ReadRequest(bufio.NewReader(strings.NewReader(method + " " + target + " HTTP/1.0\r\n\r\n")))
-	if err != nil {
-		panic("invalid NewRequest arguments; " + err.Error())
+	testCases := []struct {
+		updates []update
+		expName string
+		exp     map[string]interface{}
+	}{
+		{
+			updates: []update{{
+				Path: "/section-a",
+				Body: `{"set":{"option-1": "new-o1"}}`,
+			}},
+			exp: map[string]interface{}{
+				"section-a": map[string]interface{}{
+					"option-1": "new-o1",
+				},
+				"section-b": map[string]interface{}{
+					"option-2": "o2",
+					"password": false,
+				},
+			},
+		},
+		{
+			updates: []update{
+				{
+					Path: "/section-a",
+					Body: `{"set":{"option-1": "new-o1"}}`,
+				},
+				{
+					Path: "/section-a",
+					Body: `{"delete":["option-1"]}`,
+				},
+			},
+			exp: map[string]interface{}{
+				"section-a": map[string]interface{}{
+					"option-1": "o1",
+				},
+				"section-b": map[string]interface{}{
+					"option-2": "o2",
+					"password": false,
+				},
+			},
+		},
+		{
+			updates: []update{
+				{
+					Path: "/section-a",
+					Body: `{"set":{"option-1": "new-o1"}}`,
+				},
+				{
+					Path: "/section-b",
+					Body: `{"set":{"option-2":"new-o2"},"delete":["option-nonexistant"]}`,
+				},
+			},
+			exp: map[string]interface{}{
+				"section-a": map[string]interface{}{
+					"option-1": "new-o1",
+				},
+				"section-b": map[string]interface{}{
+					"option-2": "new-o2",
+					"password": false,
+				},
+			},
+		},
+		{
+			updates: []update{
+				{
+					Path: "/section-a",
+					Body: `{"set":{"option-1": "new-o1"}}`,
+				},
+				{
+					Path: "/section-a",
+					Body: `{"set":{"option-1":"deletd"},"delete":["option-1"]}`,
+				},
+			},
+			exp: map[string]interface{}{
+				"section-a": map[string]interface{}{
+					"option-1": "o1",
+				},
+				"section-b": map[string]interface{}{
+					"option-2": "o2",
+					"password": false,
+				},
+			},
+		},
+		{
+			updates: []update{
+				{
+					Path: "/section-b",
+					Body: `{"set":{"password": "secret"}}`,
+				},
+			},
+			exp: map[string]interface{}{
+				"section-a": map[string]interface{}{
+					"option-1": "o1",
+				},
+				"section-b": map[string]interface{}{
+					"option-2": "o2",
+					"password": true,
+				},
+			},
+		},
 	}
+	testConfig := &TestConfig{
+		SectionA: SectionA{
+			Option1: "o1",
+		},
+		SectionB: SectionB{
+			Option2: "o2",
+		},
+	}
+	for _, tc := range testCases {
+		updates := make(chan config.ConfigUpdate, len(testCases))
+		service, server := OpenNewSerivce(testConfig, updates)
+		defer server.Close()
+		defer service.Close()
+		basePath := server.Server.URL + httpd.BasePath + "/config"
+		// Apply all updates
+		for _, update := range tc.updates {
+			resp, err := http.Post(basePath+update.Path, "application/json", strings.NewReader(update.Body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			body, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, exp := resp.StatusCode, http.StatusNoContent; got != exp {
+				t.Fatalf("update failed: got: %d exp: %d\nBody:\n%s", got, exp, string(body))
+			}
 
-	// HTTP/1.0 was used above to avoid needing a Host field. Change it to 1.1 here.
-	req.Proto = "HTTP/1.1"
-	req.ProtoMinor = 1
-	req.Close = false
-
-	if body != nil {
-		switch v := body.(type) {
-		case *bytes.Buffer:
-			req.ContentLength = int64(v.Len())
-		case *bytes.Reader:
-			req.ContentLength = int64(v.Len())
-		case *strings.Reader:
-			req.ContentLength = int64(v.Len())
-		default:
-			req.ContentLength = -1
+			// Validate we got the update over the chan.
+			// This keeps the chan unblocked.
+			timer := time.NewTimer(10 * time.Millisecond)
+			defer timer.Stop()
+			select {
+			case <-updates:
+				// We got it, nothing more to do.
+			case <-timer.C:
+				t.Fatal("expected to get config update")
+			}
 		}
-		if rc, ok := body.(io.ReadCloser); ok {
-			req.Body = rc
-		} else {
-			req.Body = ioutil.NopCloser(body)
+
+		// Get config
+		resp, err := http.Get(basePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("update failed: %d", resp.StatusCode)
+		}
+
+		got := make(map[string]interface{})
+		if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+			t.Fatal(err)
+		}
+
+		if !reflect.DeepEqual(got, tc.exp) {
+			t.Errorf("unexpected config: got %v exp %v", got, tc.exp)
 		}
 	}
-
-	// 192.0.2.0/24 is "TEST-NET" in RFC 5737 for use solely in
-	// documentation and example source code and should not be
-	// used publicly.
-	req.RemoteAddr = "192.0.2.1:1234"
-
-	if req.Host == "" {
-		req.Host = "example.com"
-	}
-
-	if strings.HasPrefix(target, "https://") {
-		req.TLS = &tls.ConnectionState{
-			Version:           tls.VersionTLS12,
-			HandshakeComplete: true,
-			ServerName:        req.Host,
-		}
-	}
-
-	return req
 }
