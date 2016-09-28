@@ -86,7 +86,6 @@ func ExampleOverrider() {
 	// Override options in section-a
 	if newSectionA, err := cu.Override(override.Override{
 		Section: "section-a",
-		Element: "",
 		Options: map[string]interface{}{
 			"toml-option1": "new option1 value",
 			"toml-option2": "initial option2 value",
@@ -101,7 +100,6 @@ func ExampleOverrider() {
 	// Override options in section-b
 	if newSectionB, err := cu.Override(override.Override{
 		Section: "section-b",
-		Element: "",
 		Options: map[string]interface{}{
 			"toml-option3": "initial option3 value",
 		}}); err != nil {
@@ -114,7 +112,6 @@ func ExampleOverrider() {
 	// Override options in section-c
 	if newSectionC, err := cu.Override(override.Override{
 		Section: "section-c",
-		Element: "",
 		Options: map[string]interface{}{
 			"toml-option4": 586,
 		}}); err != nil {
@@ -149,6 +146,20 @@ func ExampleOverrider() {
 		fmt.Println("New SectionD[1].Option5:", d.Option5)
 	}
 
+	// Create new element in section-d
+	if newSectionD, err := cu.Override(override.Override{
+		Section: "section-d",
+		Create:  true,
+		Options: map[string]interface{}{
+			"ID":           "w",
+			"toml-option5": "w-new-5",
+		}}); err != nil {
+		fmt.Println("ERROR:", err)
+	} else {
+		d := newSectionD.Value().(SectionD)
+		fmt.Println("New SectionD[3].Option5:", d.Option5)
+	}
+
 	//Output:
 	// New SectionA.Option1: new option1 value
 	// New SectionA.Option2: initial option2 value
@@ -156,6 +167,7 @@ func ExampleOverrider() {
 	// New SectionC.Option4: 586
 	// New SectionD[0].Option5: x-new-5
 	// New SectionD[1].Option5: y-new-5
+	// New SectionD[3].Option5: w-new-5
 }
 
 func TestOverrider_Override(t *testing.T) {
