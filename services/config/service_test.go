@@ -26,15 +26,21 @@ type SectionB struct {
 	Password string `toml:"password" override:",redact"`
 }
 
+type SectionC struct {
+	Name    string `toml:"name"`
+	Option3 int    `toml:"option-3"`
+}
+
 type TestConfig struct {
-	SectionA SectionA `toml:"section-a" override:"section-a"`
-	SectionB SectionB `toml:"section-b" override:"section-b"`
+	SectionA  SectionA   `toml:"section-a" override:"section-a"`
+	SectionB  SectionB   `toml:"section-b" override:"section-b"`
+	SectionCs []SectionC `toml:"section-c" override:"section-c,element-key=name"`
 }
 
 func OpenNewSerivce(testConfig interface{}, updates chan<- config.ConfigUpdate) (*config.Service, *httpdtest.Server) {
 	service := config.NewService(testConfig, log.New(os.Stderr, "[config] ", log.LstdFlags), updates)
 	service.StorageService = storagetest.New()
-	server := httpdtest.NewServer(true)
+	server := httpdtest.NewServer(testing.Verbose())
 	service.HTTPDService = server
 	if err := service.Open(); err != nil {
 		panic(err)
@@ -53,8 +59,10 @@ func TestService_UpdateSection(t *testing.T) {
 			body:    `{"set":{"option-1": "new-o1"}}`,
 			path:    "/section-a",
 			expName: "section-a",
-			exp: SectionA{
-				Option1: "new-o1",
+			exp: []interface{}{
+				SectionA{
+					Option1: "new-o1",
+				},
 			},
 		},
 	}
@@ -69,7 +77,6 @@ func TestService_UpdateSection(t *testing.T) {
 	defer service.Close()
 	basePath := server.Server.URL + httpd.BasePath + "/config"
 	for _, tc := range testCases {
-		log.Println("D! PATH", server.Server.URL+tc.path)
 		resp, err := http.Post(basePath+tc.path, "application/json", strings.NewReader(tc.body))
 		if err != nil {
 			t.Fatal(err)
@@ -110,20 +117,34 @@ func TestService_GetConfig(t *testing.T) {
 	testCases := []struct {
 		updates []update
 		expName string
-		exp     map[string]interface{}
+		exp     map[string][]map[string]interface{}
 	}{
 		{
 			updates: []update{{
 				Path: "/section-a",
 				Body: `{"set":{"option-1": "new-o1"}}`,
 			}},
-			exp: map[string]interface{}{
-				"section-a": map[string]interface{}{
+			exp: map[string][]map[string]interface{}{
+				"section-a": {{
 					"option-1": "new-o1",
-				},
-				"section-b": map[string]interface{}{
+				}},
+				"section-b": {{
 					"option-2": "o2",
 					"password": false,
+				}},
+				"section-c": {
+					{
+						"name":     "x",
+						"option-3": float64(1),
+					},
+					{
+						"name":     "y",
+						"option-3": float64(2),
+					},
+					{
+						"name":     "z",
+						"option-3": float64(3),
+					},
 				},
 			},
 		},
@@ -138,13 +159,27 @@ func TestService_GetConfig(t *testing.T) {
 					Body: `{"delete":["option-1"]}`,
 				},
 			},
-			exp: map[string]interface{}{
-				"section-a": map[string]interface{}{
+			exp: map[string][]map[string]interface{}{
+				"section-a": {{
 					"option-1": "o1",
-				},
-				"section-b": map[string]interface{}{
+				}},
+				"section-b": {{
 					"option-2": "o2",
 					"password": false,
+				}},
+				"section-c": {
+					{
+						"name":     "x",
+						"option-3": float64(1),
+					},
+					{
+						"name":     "y",
+						"option-3": float64(2),
+					},
+					{
+						"name":     "z",
+						"option-3": float64(3),
+					},
 				},
 			},
 		},
@@ -159,13 +194,27 @@ func TestService_GetConfig(t *testing.T) {
 					Body: `{"set":{"option-2":"new-o2"},"delete":["option-nonexistant"]}`,
 				},
 			},
-			exp: map[string]interface{}{
-				"section-a": map[string]interface{}{
+			exp: map[string][]map[string]interface{}{
+				"section-a": {{
 					"option-1": "new-o1",
-				},
-				"section-b": map[string]interface{}{
+				}},
+				"section-b": {{
 					"option-2": "new-o2",
 					"password": false,
+				}},
+				"section-c": {
+					{
+						"name":     "x",
+						"option-3": float64(1),
+					},
+					{
+						"name":     "y",
+						"option-3": float64(2),
+					},
+					{
+						"name":     "z",
+						"option-3": float64(3),
+					},
 				},
 			},
 		},
@@ -180,13 +229,27 @@ func TestService_GetConfig(t *testing.T) {
 					Body: `{"set":{"option-1":"deletd"},"delete":["option-1"]}`,
 				},
 			},
-			exp: map[string]interface{}{
-				"section-a": map[string]interface{}{
+			exp: map[string][]map[string]interface{}{
+				"section-a": {{
 					"option-1": "o1",
-				},
-				"section-b": map[string]interface{}{
+				}},
+				"section-b": {{
 					"option-2": "o2",
 					"password": false,
+				}},
+				"section-c": {
+					{
+						"name":     "x",
+						"option-3": float64(1),
+					},
+					{
+						"name":     "y",
+						"option-3": float64(2),
+					},
+					{
+						"name":     "z",
+						"option-3": float64(3),
+					},
 				},
 			},
 		},
@@ -197,13 +260,281 @@ func TestService_GetConfig(t *testing.T) {
 					Body: `{"set":{"password": "secret"}}`,
 				},
 			},
-			exp: map[string]interface{}{
-				"section-a": map[string]interface{}{
+			exp: map[string][]map[string]interface{}{
+				"section-a": {{
 					"option-1": "o1",
-				},
-				"section-b": map[string]interface{}{
+				}},
+				"section-b": {{
 					"option-2": "o2",
 					"password": true,
+				}},
+				"section-c": {
+					{
+						"name":     "x",
+						"option-3": float64(1),
+					},
+					{
+						"name":     "y",
+						"option-3": float64(2),
+					},
+					{
+						"name":     "z",
+						"option-3": float64(3),
+					},
+				},
+			},
+		},
+		{
+			updates: []update{
+				{
+					Path: "/section-c/x",
+					Body: `{"set":{"option-3": 42}}`,
+				},
+			},
+			exp: map[string][]map[string]interface{}{
+				"section-a": {{
+					"option-1": "o1",
+				}},
+				"section-b": {{
+					"option-2": "o2",
+					"password": false,
+				}},
+				"section-c": {
+					{
+						"name":     "x",
+						"option-3": float64(42),
+					},
+					{
+						"name":     "y",
+						"option-3": float64(2),
+					},
+					{
+						"name":     "z",
+						"option-3": float64(3),
+					},
+				},
+			},
+		},
+		{
+			updates: []update{
+				{
+					Path: "/section-c/x",
+					Body: `{"set":{"option-3": 42}}`,
+				},
+				{
+					Path: "/section-c/x",
+					Body: `{"delete":["option-3"]}`,
+				},
+			},
+			exp: map[string][]map[string]interface{}{
+				"section-a": {{
+					"option-1": "o1",
+				}},
+				"section-b": {{
+					"option-2": "o2",
+					"password": false,
+				}},
+				"section-c": {
+					{
+						"name":     "x",
+						"option-3": float64(1),
+					},
+					{
+						"name":     "y",
+						"option-3": float64(2),
+					},
+					{
+						"name":     "z",
+						"option-3": float64(3),
+					},
+				},
+			},
+		},
+		{
+			updates: []update{
+				{
+					Path: "/section-c",
+					Body: `{"add":{"name":"w", "option-3": 42}}`,
+				},
+			},
+			exp: map[string][]map[string]interface{}{
+				"section-a": {{
+					"option-1": "o1",
+				}},
+				"section-b": {{
+					"option-2": "o2",
+					"password": false,
+				}},
+				"section-c": {
+					{
+						"name":     "w",
+						"option-3": float64(42),
+					},
+					{
+						"name":     "x",
+						"option-3": float64(1),
+					},
+					{
+						"name":     "y",
+						"option-3": float64(2),
+					},
+					{
+						"name":     "z",
+						"option-3": float64(3),
+					},
+				},
+			},
+		},
+		{
+			updates: []update{
+				{
+					Path: "/section-c",
+					Body: `{"add":{"name":"w", "option-3": 42}}`,
+				},
+				{
+					Path: "/section-c",
+					Body: `{"add":{"name":"q"}}`,
+				},
+			},
+			exp: map[string][]map[string]interface{}{
+				"section-a": {{
+					"option-1": "o1",
+				}},
+				"section-b": {{
+					"option-2": "o2",
+					"password": false,
+				}},
+				"section-c": {
+					{
+						"name":     "q",
+						"option-3": float64(0),
+					},
+					{
+						"name":     "w",
+						"option-3": float64(42),
+					},
+					{
+						"name":     "x",
+						"option-3": float64(1),
+					},
+					{
+						"name":     "y",
+						"option-3": float64(2),
+					},
+					{
+						"name":     "z",
+						"option-3": float64(3),
+					},
+				},
+			},
+		},
+		{
+			updates: []update{
+				{
+					Path: "/section-c",
+					Body: `{"add":{"name":"w", "option-3": 42}}`,
+				},
+				{
+					Path: "/section-c/w",
+					Body: `{"set":{"option-3": 24}}`,
+				},
+			},
+			exp: map[string][]map[string]interface{}{
+				"section-a": {{
+					"option-1": "o1",
+				}},
+				"section-b": {{
+					"option-2": "o2",
+					"password": false,
+				}},
+				"section-c": {
+					{
+						"name":     "w",
+						"option-3": float64(24),
+					},
+					{
+						"name":     "x",
+						"option-3": float64(1),
+					},
+					{
+						"name":     "y",
+						"option-3": float64(2),
+					},
+					{
+						"name":     "z",
+						"option-3": float64(3),
+					},
+				},
+			},
+		},
+		{
+			updates: []update{
+				{
+					Path: "/section-c",
+					Body: `{"add":{"name":"w", "option-3": 42}}`,
+				},
+				{
+					Path: "/section-c/w",
+					Body: `{"set":{"option-3": 24}}`,
+				},
+				{
+					Path: "/section-c",
+					Body: `{"remove":["w"]}`,
+				},
+			},
+			exp: map[string][]map[string]interface{}{
+				"section-a": {{
+					"option-1": "o1",
+				}},
+				"section-b": {{
+					"option-2": "o2",
+					"password": false,
+				}},
+				"section-c": {
+					{
+						"name":     "x",
+						"option-3": float64(1),
+					},
+					{
+						"name":     "y",
+						"option-3": float64(2),
+					},
+					{
+						"name":     "z",
+						"option-3": float64(3),
+					},
+				},
+			},
+		},
+		{
+			// Only added overrides can be removed, not existing default elements
+			updates: []update{
+				{
+					Path: "/section-c",
+					Body: `{"remove":["x"]}`,
+				},
+			},
+			exp: map[string][]map[string]interface{}{
+				"section-a": {{
+					"option-1": "o1",
+				}},
+				"section-b": {{
+					"option-2": "o2",
+					"password": false,
+				}},
+				"section-c": {
+					{
+						"name":     "x",
+						"option-3": float64(1),
+					},
+					{
+						"name":     "y",
+						"option-3": float64(2),
+					},
+					{
+						"name":     "z",
+						"option-3": float64(3),
+					},
 				},
 			},
 		},
@@ -214,6 +545,20 @@ func TestService_GetConfig(t *testing.T) {
 		},
 		SectionB: SectionB{
 			Option2: "o2",
+		},
+		SectionCs: []SectionC{
+			{
+				Name:    "x",
+				Option3: 1,
+			},
+			{
+				Name:    "y",
+				Option3: 2,
+			},
+			{
+				Name:    "z",
+				Option3: 3,
+			},
 		},
 	}
 	for _, tc := range testCases {
@@ -259,13 +604,13 @@ func TestService_GetConfig(t *testing.T) {
 			t.Fatalf("update failed: %d", resp.StatusCode)
 		}
 
-		got := make(map[string]interface{})
+		got := make(map[string][]map[string]interface{})
 		if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
 			t.Fatal(err)
 		}
 
 		if !reflect.DeepEqual(got, tc.exp) {
-			t.Errorf("unexpected config: got %v exp %v", got, tc.exp)
+			t.Errorf("unexpected config:\ngot\n%v\nexp\n%v\n", got, tc.exp)
 		}
 	}
 }

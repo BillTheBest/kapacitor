@@ -18,6 +18,7 @@ import (
 	iclient "github.com/influxdata/influxdb/client/v2"
 	"github.com/influxdata/kapacitor/client/v1"
 	"github.com/influxdata/kapacitor/server"
+	"github.com/influxdata/kapacitor/services/logging/loggingtest"
 	"github.com/influxdata/wlog"
 )
 

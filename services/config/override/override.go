@@ -38,7 +38,9 @@ package override
 
 import (
 	"fmt"
+	"log"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -48,8 +50,9 @@ import (
 )
 
 const (
-	structTagKey  = "override"
-	redactKeyword = "redact"
+	structTagKey   = "override"
+	redactKeyword  = "redact"
+	elementKeyword = "element-key="
 )
 
 // OptionNameFunc returns the name of a field based on its
@@ -113,39 +116,98 @@ func New(config interface{}) *Overrider {
 // Any mismatched type or failure to convert to a numeric type will result in an error.
 //
 // The underlying configuration object is not modified, but rather a copy is returned via the Section type.
-func (c *Overrider) Override(section string, overrides map[string]interface{}) (Section, error) {
-	if section == "" {
-		return Section{}, errors.New("section cannot be empty")
-	}
+func (c *Overrider) Override(o Override) (Section, error) {
 	// First make a copy into which we can apply the updates.
 	copy, err := copystructure.Copy(c.original)
 	if err != nil {
 		return Section{}, errors.Wrap(err, "failed to copy configuration object")
 	}
+
+	return c.applyOverride(copy, o)
+}
+
+// applyOverride applies the given override to the specified object.
+func (c *Overrider) applyOverride(object interface{}, o Override) (Section, error) {
+	if err := o.Validate(); err != nil {
+		return Section{}, errors.Wrap(err, "invalid override")
+	}
 	walker := newOverrideWalker(
-		section,
-		overrides,
+		o,
 		c.OptionNameFunc,
 	)
 
 	// walk the copy and apply the updates
-	if err := reflectwalk.Walk(copy, walker); err != nil {
-		return Section{}, errors.Wrapf(err, "failed to apply changes to configuration object for section %s", section)
+	if err := reflectwalk.Walk(object, walker); err != nil {
+		return Section{}, errors.Wrapf(err, "failed to apply changes to configuration object for section %s", o.Section)
 	}
 	unused := walker.unused()
 	if len(unused) > 0 {
-		return Section{}, fmt.Errorf("unknown options %v in section %s", unused, section)
+		return Section{}, fmt.Errorf("unknown options %v in section %s", unused, o.Section)
 	}
 	// Return the modified copy
-	newValue := walker.sectionObject()
-	if newValue == nil {
-		return Section{}, fmt.Errorf("unknown section %s", section)
+	section := walker.sectionObject()
+	if section.value == nil && !o.Delete {
+		return Section{}, fmt.Errorf("unknown section %s", o.Section)
 	}
-	return Section{section: newValue, optionNameFunc: c.OptionNameFunc}, nil
+	return section, nil
+}
+
+type Override struct {
+	Section string
+	Element string
+	Options map[string]interface{}
+	Delete  bool
+	Create  bool
+}
+
+func (o Override) Validate() error {
+	if o.Section == "" {
+		return errors.New("section cannot be empty")
+	}
+	if o.Delete && o.Element == "" {
+		return errors.New("element cannot be empty if deleting an element")
+	}
+	if o.Create && o.Element != "" {
+		return errors.New("element must be empty if creating an element, set the element key value via the options")
+	}
+	if o.Delete && len(o.Options) > 0 {
+		return errors.New("cannot delete an element and provide options in the same override")
+	}
+	if o.Delete && o.Create {
+		return errors.New("cannot create and delete an element in the same override")
+	}
+	return nil
+}
+
+// OverrideAll applies all given overrides and returns a map of all configuration sections, even if they were not overridden.
+// The overrides are all applied to the same object and the original configuration object remains unmodified.
+func (c *Overrider) OverrideAll(os []Override) (map[string]SectionList, error) {
+	// First make a copy into which we can apply the updates.
+	copy, err := copystructure.Copy(c.original)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to copy configuration object")
+	}
+
+	// Apply all overrides to the same copy
+	for _, o := range os {
+		// We do not need to keep a reference to the section since we are going to walk the entire copy next
+		_, err := c.applyOverride(copy, o)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to override configuration section/element %s/%s", o.Section, o.Element)
+		}
+	}
+
+	// Walk the copy to return all sections
+	walker := newSectionWalker(c.OptionNameFunc)
+	if err := reflectwalk.Walk(copy, walker); err != nil {
+		return nil, errors.Wrap(err, "failed to read sections from configuration object")
+	}
+
+	return walker.sectionsMap(), nil
 }
 
 // Sections returns the original unmodified configuration sections.
-func (c *Overrider) Sections() (map[string]Section, error) {
+func (c *Overrider) Sections() (map[string]SectionList, error) {
 	// walk the original and read all sections
 	walker := newSectionWalker(c.OptionNameFunc)
 	if err := reflectwalk.Walk(c.original, walker); err != nil {
@@ -155,31 +217,44 @@ func (c *Overrider) Sections() (map[string]Section, error) {
 	return walker.sectionsMap(), nil
 }
 
+// ElementKeys returns a map of section name to element key name for each section.
+func (c *Overrider) ElementKeys() (map[string]string, error) {
+	// walk the original and read all sections
+	walker := newSectionWalker(c.OptionNameFunc)
+	if err := reflectwalk.Walk(c.original, walker); err != nil {
+		return nil, errors.Wrap(err, "failed to read sections from configuration object")
+	}
+
+	return walker.elementKeysMap(), nil
+}
+
 // overrideWalker applies the changes onto the walked value.
 type overrideWalker struct {
 	depthWalker
-	section string
-	set     map[string]interface{}
-	used    map[string]bool
 
-	sectionValue reflect.Value
+	o Override
 
-	optionNameFunc     OptionNameFunc
+	optionNameFunc OptionNameFunc
+
+	used               map[string]bool
+	sectionValue       reflect.Value
 	currentSectionName string
+	currentElementName string
+	currentSlice       reflect.Value
+	elementKey         string
 }
 
-func newOverrideWalker(section string, set map[string]interface{}, optionNameFunc OptionNameFunc) *overrideWalker {
+func newOverrideWalker(o Override, optionNameFunc OptionNameFunc) *overrideWalker {
 	return &overrideWalker{
-		section:        section,
-		set:            set,
-		used:           make(map[string]bool, len(set)),
+		o:              o,
+		used:           make(map[string]bool, len(o.Options)),
 		optionNameFunc: optionNameFunc,
 	}
 }
 
 func (w *overrideWalker) unused() []string {
-	unused := make([]string, 0, len(w.set))
-	for name := range w.set {
+	unused := make([]string, 0, len(w.o.Options))
+	for name := range w.o.Options {
 		if !w.used[name] {
 			unused = append(unused, name)
 		}
@@ -187,11 +262,15 @@ func (w *overrideWalker) unused() []string {
 	return unused
 }
 
-func (w *overrideWalker) sectionObject() interface{} {
+func (w *overrideWalker) sectionObject() Section {
 	if w.sectionValue.IsValid() {
-		return w.sectionValue.Interface()
+		return Section{
+			value:          w.sectionValue.Interface(),
+			optionNameFunc: w.optionNameFunc,
+			element:        w.o.Element,
+		}
 	}
-	return nil
+	return Section{}
 }
 
 func (w *overrideWalker) Struct(reflect.Value) error {
@@ -206,23 +285,118 @@ func (w *overrideWalker) StructField(f reflect.StructField, v reflect.Value) err
 		if ok {
 			// Only override the section if a struct tag was present
 			w.currentSectionName = name
-			if w.section == w.currentSectionName {
+			if w.o.Section == w.currentSectionName {
 				w.sectionValue = v
+				w.elementKey = getElementKey(f)
 			}
+		} else {
+			w.currentSectionName = ""
 		}
 	// Option level
 	case 1:
-		// Skip this field if its not for the section we care about
-		if w.currentSectionName != w.section {
+		// Skip this field if its not for the section/element we care about
+		if w.currentSectionName != w.o.Section || w.currentElementName != w.o.Element {
 			break
 		}
+
 		name := w.optionNameFunc(f)
-		setValue, ok := w.set[name]
+		setValue, ok := w.o.Options[name]
 		if ok {
+			if !w.o.Create && name == w.elementKey {
+				return fmt.Errorf("cannot override element key %s", name)
+			}
 			if err := weakCopyValue(reflect.ValueOf(setValue), v); err != nil {
 				return errors.Wrapf(err, "cannot set option %s", name)
 			}
 			w.used[name] = true
+		}
+	}
+	return nil
+}
+
+func (w *overrideWalker) Slice(v reflect.Value) error {
+	w.currentSlice = v
+	if w.o.Section != w.currentSectionName {
+		return nil
+	}
+	switch {
+	case w.o.Delete:
+		// Explictly set the section value to the zero value
+		w.sectionValue = reflect.Value{}
+	case w.o.Create:
+		// Create a new element in the slice
+		var n reflect.Value
+		et := v.Type().Elem()
+		if et.Kind() == reflect.Ptr {
+			n = reflect.New(et.Elem())
+		} else {
+			n = reflect.Zero(et)
+		}
+		v.Set(reflect.Append(v, n))
+		// Set element key
+		if w.elementKey != "" {
+			// Get the value that is now part of the slice.
+			n = v.Index(v.Len() - 1)
+
+			elementField := findFieldByElementKey(n, w.elementKey, w.optionNameFunc)
+			if elementField.IsValid() {
+				if elementField.Kind() != reflect.String {
+					return fmt.Errorf("element key field must be of type string, got %s", elementField.Type())
+				}
+				if setValue, ok := w.o.Options[w.elementKey]; ok {
+					if str, ok := setValue.(string); ok {
+						w.o.Element = str
+					} else {
+						return fmt.Errorf("type of element key must be a string, got %T ", setValue)
+					}
+					if err := weakCopyValue(reflect.ValueOf(setValue), elementField); err != nil {
+						return errors.Wrapf(err, "cannot set element key %q on new element", w.elementKey)
+					}
+				} else {
+					return fmt.Errorf("element key %q not present in options", w.elementKey)
+				}
+			} else {
+				return fmt.Errorf("could not find field with the name of the element key %q", w.elementKey)
+			}
+		} else {
+			return fmt.Errorf("cannot create new element, no element key found. An element key must be specified via the `%s:\",%s<field name>\"` struct tag", structTagKey, elementKeyword)
+		}
+	default:
+		// We are modifying an existing slice element.
+		// Nothing to do here.
+	}
+	return nil
+}
+
+func (w *overrideWalker) SliceElem(idx int, v reflect.Value) error {
+	w.currentElementName = ""
+	if w.depth == 1 && w.currentSectionName == w.o.Section && w.o.Element != "" {
+		if w.elementKey != "" {
+			// Get current element name via field on current value
+			elementField := findFieldByElementKey(v, w.elementKey, w.optionNameFunc)
+			if elementField.IsValid() {
+				if elementField.Kind() != reflect.String {
+					return fmt.Errorf("element key field must be of type string, got %s", elementField.Type())
+				}
+				w.currentElementName = elementField.String()
+				if w.o.Element == w.currentElementName {
+					if w.o.Delete {
+						// Delete the element from the slice by re-slicing the element out
+						w.currentSlice.Set(
+							reflect.AppendSlice(
+								w.currentSlice.Slice(0, idx),
+								w.currentSlice.Slice(idx+1, w.currentSlice.Len()),
+							),
+						)
+					} else {
+						w.sectionValue = v
+					}
+				}
+			} else {
+				return fmt.Errorf("could not find field with name %q on value of type %s", w.elementKey, v.Type())
+			}
+		} else {
+			return fmt.Errorf("an element key must be specified via the `%s:\",%s<field name>\"` struct tag", structTagKey, elementKeyword)
 		}
 	}
 	return nil
@@ -285,13 +459,19 @@ func isFloatKind(k reflect.Kind) bool {
 
 // Section provides access to the underlying value or a map of redacted values.
 type Section struct {
-	section        interface{}
+	value          interface{}
+	element        string
 	optionNameFunc OptionNameFunc
+}
+
+// elementValue returns unique value that identifies this element
+func (s Section) elementValue() string {
+	return s.element
 }
 
 // Value returns the underlying value.
 func (s Section) Value() interface{} {
-	return s.section
+	return s.value
 }
 
 // Redacted returns the options for the section in a map.
@@ -300,10 +480,49 @@ func (s Section) Value() interface{} {
 func (s Section) Redacted() (map[string]interface{}, error) {
 	walker := newRedactWalker(s.optionNameFunc)
 	// walk the section and collect redacted options
-	if err := reflectwalk.Walk(s.section, walker); err != nil {
+	if err := reflectwalk.Walk(s.value, walker); err != nil {
 		return nil, errors.Wrap(err, "failed to redact section")
 	}
 	return walker.optionsMap(), nil
+}
+
+// getElementKey returns the name of the field taht is used to uniquely identify elements of a list.
+func getElementKey(f reflect.StructField) string {
+	parts := strings.Split(f.Tag.Get(structTagKey), ",")
+	if len(parts) > 0 {
+		for _, p := range parts[1:] {
+			if strings.HasPrefix(p, elementKeyword) {
+				return strings.TrimPrefix(p, elementKeyword)
+			}
+		}
+	}
+	return ""
+}
+
+func findFieldByElementKey(v reflect.Value, elementKey string, optionNameFunc OptionNameFunc) (field reflect.Value) {
+	v = reflect.Indirect(v)
+	if v.Kind() != reflect.Struct {
+		log.Println("value is not a struct", v)
+		return
+	}
+	field = v.FieldByName(elementKey)
+	if field.IsValid() {
+		return
+	}
+
+	t := v.Type()
+	for i := 0; i < t.NumField(); i++ {
+		field = v.Field(i)
+		// Skip any unexported fields
+		if !field.CanSet() {
+			continue
+		}
+		name := optionNameFunc(t.Field(i))
+		if name == elementKey {
+			return
+		}
+	}
+	return
 }
 
 // redactWalker reads the the sections from the walked values and redacts and sensitive fields.
@@ -314,9 +533,6 @@ type redactWalker struct {
 }
 
 func newRedactWalker(optionNameFunc OptionNameFunc) *redactWalker {
-	if optionNameFunc == nil {
-		optionNameFunc = OverrideFieldName
-	}
 	return &redactWalker{
 		options:        make(map[string]interface{}),
 		optionNameFunc: optionNameFunc,
@@ -333,12 +549,12 @@ func (w *redactWalker) Struct(reflect.Value) error {
 
 func (w *redactWalker) StructField(f reflect.StructField, v reflect.Value) error {
 	switch w.depth {
+	// Top level
 	case 0:
-		// Top level
 		name := w.optionNameFunc(f)
 		w.options[name] = getRedactedValue(f, v)
+	// Ignore all other levels
 	default:
-		// Ignore all other levels
 	}
 	return nil
 }
@@ -391,22 +607,38 @@ func isZero(v reflect.Value) bool {
 	}
 }
 
+type SectionList []Section
+
+func (s SectionList) Len() int           { return len(s) }
+func (s SectionList) Less(i, j int) bool { return s[i].elementValue() < s[j].elementValue() }
+func (s SectionList) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
+
 // sectionWalker reads the sections from the walked values and redacts any sensitive fields.
 type sectionWalker struct {
 	depthWalker
-	sections       map[string]Section
-	optionNameFunc OptionNameFunc
+	sections           map[string]SectionList
+	optionNameFunc     OptionNameFunc
+	currentSectionName string
+	elementKeys        map[string]string
 }
 
 func newSectionWalker(optionNameFunc OptionNameFunc) *sectionWalker {
 	return &sectionWalker{
-		sections:       make(map[string]Section),
+		sections:       make(map[string]SectionList),
+		elementKeys:    make(map[string]string),
 		optionNameFunc: optionNameFunc,
 	}
 }
 
-func (w *sectionWalker) sectionsMap() map[string]Section {
+func (w *sectionWalker) sectionsMap() map[string]SectionList {
+	for _, sectionList := range w.sections {
+		sort.Sort(sectionList)
+	}
 	return w.sections
+}
+
+func (w *sectionWalker) elementKeysMap() map[string]string {
+	return w.elementKeys
 }
 
 func (w *sectionWalker) Struct(reflect.Value) error {
@@ -419,12 +651,53 @@ func (w *sectionWalker) StructField(f reflect.StructField, v reflect.Value) erro
 	case 0:
 		name, ok := getSectionName(f)
 		if ok {
-			w.sections[name] = Section{
-				section:        v.Interface(),
-				optionNameFunc: w.optionNameFunc,
+			w.currentSectionName = name
+			elementKey := getElementKey(f)
+			w.elementKeys[name] = elementKey
+			if k := reflect.Indirect(v).Kind(); k == reflect.Struct {
+				w.sections[name] = SectionList{{
+					value:          v.Interface(),
+					optionNameFunc: w.optionNameFunc,
+				}}
+			} else if k != reflect.Slice {
+				return fmt.Errorf("section field must be a struct or a slice of structs")
 			}
 		}
 	// Skip all other levels
+	default:
+	}
+	return nil
+}
+
+func (w *sectionWalker) Slice(reflect.Value) error {
+	return nil
+}
+
+func (w *sectionWalker) SliceElem(idx int, v reflect.Value) error {
+	switch w.depth {
+	//Option level
+	case 1:
+		// Get element value from object
+		var element string
+		elementKey, ok := w.elementKeys[w.currentSectionName]
+		if !ok {
+			return fmt.Errorf("no element key found for section %s", w.currentSectionName)
+		}
+		elementField := findFieldByElementKey(v, elementKey, w.optionNameFunc)
+		if elementField.IsValid() {
+			if elementField.Kind() != reflect.String {
+				return fmt.Errorf("element key field must be of type string, got %s", elementField.Type())
+			}
+			element = elementField.String()
+		} else {
+			return fmt.Errorf("could not find field with the name of the element key %q on element object", elementKey)
+		}
+		w.sections[w.currentSectionName] = append(w.sections[w.currentSectionName], Section{
+			value:          v.Interface(),
+			optionNameFunc: w.optionNameFunc,
+			element:        element,
+		})
+		// Skip all other levels
 	default:
 	}
 	return nil

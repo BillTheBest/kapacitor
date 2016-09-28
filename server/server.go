@@ -246,7 +246,7 @@ func (s *Server) appendInfluxDBService() error {
 		s.InfluxDBService = srv
 		s.TaskMaster.InfluxDBService = srv
 		s.AppendService("influxdb", srv)
-		s.DynamicServices["influxdb"] = srv
+		//s.DynamicServices["influxdb"] = srv
 	}
 	return nil
 }
@@ -325,7 +325,7 @@ func (s *Server) appendOpsGenieService() {
 		s.TaskMaster.OpsGenieService = srv
 
 		s.AppendService("opsgenie", srv)
-		s.DynamicServices["opsgenie"] = srv
+		//s.DynamicServices["opsgenie"] = srv
 	}
 }
 
@@ -337,7 +337,7 @@ func (s *Server) appendVictorOpsService() {
 		s.TaskMaster.VictorOpsService = srv
 
 		s.AppendService("victorops", srv)
-		s.DynamicServices["victorops"] = srv
+		//s.DynamicServices["victorops"] = srv
 	}
 }
 
@@ -350,7 +350,7 @@ func (s *Server) appendPagerDutyService() {
 		s.TaskMaster.PagerDutyService = srv
 
 		s.AppendService("pagerduty", srv)
-		s.DynamicServices["pagerduty"] = srv
+		//s.DynamicServices["pagerduty"] = srv
 	}
 }
 
@@ -362,7 +362,7 @@ func (s *Server) appendSensuService() {
 		s.TaskMaster.SensuService = srv
 
 		s.AppendService("sensu", srv)
-		s.DynamicServices["sensu"] = srv
+		//s.DynamicServices["sensu"] = srv
 	}
 }
 
@@ -374,7 +374,7 @@ func (s *Server) appendSlackService() {
 		s.TaskMaster.SlackService = srv
 
 		s.AppendService("slack", srv)
-		s.DynamicServices["slack"] = srv
+		//s.DynamicServices["slack"] = srv
 	}
 }
 
@@ -386,7 +386,7 @@ func (s *Server) appendTelegramService() {
 		s.TaskMaster.TelegramService = srv
 
 		s.AppendService("telegram", srv)
-		s.DynamicServices["telegram"] = srv
+		//s.DynamicServices["telegram"] = srv
 	}
 }
 
@@ -398,7 +398,7 @@ func (s *Server) appendHipChatService() {
 		s.TaskMaster.HipChatService = srv
 
 		s.AppendService("hipchat", srv)
-		s.DynamicServices["hipchat"] = srv
+		//s.DynamicServices["hipchat"] = srv
 	}
 }
 
@@ -410,7 +410,7 @@ func (s *Server) appendAlertaService() {
 		s.TaskMaster.AlertaService = srv
 
 		s.AppendService("alerta", srv)
-		s.DynamicServices["alerta"] = srv
+		//s.DynamicServices["alerta"] = srv
 	}
 }
 
@@ -422,7 +422,7 @@ func (s *Server) appendTalkService() {
 		s.TaskMaster.TalkService = srv
 
 		s.AppendService("talk", srv)
-		s.DynamicServices["talk"] = srv
+		//s.DynamicServices["talk"] = srv
 	}
 }
 
@@ -552,10 +552,10 @@ func (s *Server) watchServices() {
 func (s *Server) watchConfigUpdates() {
 	for cu := range s.configUpdates {
 		if srv, ok := s.DynamicServices[cu.Name]; !ok {
-			s.logger.Printf("E! got configuration update for unkown service %s", cu.Name)
+			s.Logger.Printf("E! got configuration update for unkown service %s", cu.Name)
 		} else {
 			if err := srv.Update(cu.NewConfig); err != nil {
-				s.logger.Printf("E! got error when attempting to update configuration for service %s: %v", cu.Name, err)
+				s.Logger.Printf("E! got error when attempting to update configuration for service %s: %v", cu.Name, err)
 			}
 		}
 	}
