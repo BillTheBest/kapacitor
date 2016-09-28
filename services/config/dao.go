@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/gob"
 	"errors"
-	"log"
 
 	"github.com/influxdata/kapacitor/services/storage"
 )
@@ -27,8 +26,8 @@ type OverrideDAO interface {
 	// It is not an error to delete an non-existent override.
 	Delete(id string) error
 
-	// List all overrides
-	List() ([]Override, error)
+	// List all overrides whose ID starts with the given prefix
+	List(prefix string) ([]Override, error)
 }
 
 //--------------------------------------------------------------------
@@ -43,8 +42,11 @@ type OverrideDAO interface {
 type Override struct {
 	// Unique identifier for the override
 	ID string
-	// Map of key value pairs of overrides.
-	Overrides map[string]interface{}
+
+	// Map of key value pairs of option overrides.
+	Options map[string]interface{}
+
+	Create bool
 }
 
 const (
@@ -140,20 +142,20 @@ func (d *overrideKV) Delete(id string) error {
 	return indexErr
 }
 
-func (d *overrideKV) List() ([]Override, error) {
+func (d *overrideKV) List(prefix string) ([]Override, error) {
 	// List all override ids sorted by ID
-	ids, err := d.store.List(overrideIndexesPrefix + idIndex)
+	ids, err := d.store.List(overrideIndexesPrefix + idIndex + prefix)
 	if err != nil {
 		return nil, err
 	}
-	log.Println("ids", ids)
-	overrides := make([]Override, len(ids))
-	for i, id := range ids {
-		var err error
-		overrides[i], err = d.Get(string(id.Value))
+	overrides := make([]Override, 0, len(ids))
+	for _, kv := range ids {
+		id := string(kv.Value)
+		o, err := d.Get(id)
 		if err != nil {
 			return nil, err
 		}
+		overrides = append(overrides, o)
 	}
 
 	return overrides, nil
