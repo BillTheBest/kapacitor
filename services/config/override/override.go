@@ -3,10 +3,11 @@
 // The "section" level represents the top level fields of the object.
 // The "option" level represents the second level of fields in the object.
 // Further levels may exist but Overrider will not interact with them.
+// A "section" level may be a struct or a slice of structs.
 //
 // In order for a section to be overridden an `override` struct tag must be present.
 // The `override` tag defines a name for the section.
-// Struct tags can be used to mark fields as redacted as well, by adding a `,redact` to the end of the tag value.
+// Struct tags can be used to mark options as redacted by adding a `,redact` to the end of the `override` tag value.
 // Overrider also has support for reading option names from custom struct tags like `toml` or `json`
 // via the OptionNameFunc field of the Overrider type.
 //
@@ -33,7 +34,10 @@
 //    // Read redacted section values
 //    redacted, err := o.Sections()
 //    // Override options for a section
-//    newSection, err := o.Override("section-name", map[string]interface{}{"option": "overridden option value"})
+//    newSection, err := o.Override(Override{
+//        Section: "section-name",
+//        Options: map[string]interface{}{"option": "overridden option value"},
+//    })
 package override
 
 import (
@@ -346,6 +350,7 @@ func (w *overrideWalker) Slice(v reflect.Value) error {
 				if setValue, ok := w.o.Options[w.elementKey]; ok {
 					if str, ok := setValue.(string); ok {
 						w.o.Element = str
+						w.used[w.elementKey] = true
 					} else {
 						return fmt.Errorf("type of element key must be a string, got %T ", setValue)
 					}
