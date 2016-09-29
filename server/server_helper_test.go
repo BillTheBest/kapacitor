@@ -81,7 +81,7 @@ func Client(s *Server) *client.Client {
 func (s *Server) Close() {
 	s.Server.Close()
 	os.RemoveAll(s.Config.Replay.Dir)
-	os.Remove(s.Config.Storage.BoltDBPath)
+	os.RemoveAll(filepath.Dir(s.Config.Storage.BoltDBPath))
 	os.RemoveAll(s.Config.DataDir)
 }
 

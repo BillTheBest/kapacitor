@@ -26,6 +26,10 @@ type SectionD struct {
 	Option5 string `toml:"toml-option5" json:"json-option5"`
 }
 
+type SectionIgnored struct {
+	String string
+}
+
 type SectionNums struct {
 	Int   int
 	Int8  int8
@@ -44,11 +48,12 @@ type SectionNums struct {
 }
 
 type TestConfig struct {
-	SectionA    SectionA    `override:"section-a"`
-	SectionB    SectionB    `override:"section-b"`
-	SectionC    *SectionC   `override:"section-c"`
-	SectionNums SectionNums `override:"section-nums"`
-	SectionDs   []SectionD  `override:"section-d,element-key=ID"`
+	SectionA       SectionA    `override:"section-a"`
+	SectionB       SectionB    `override:"section-b"`
+	SectionC       *SectionC   `override:"section-c"`
+	SectionNums    SectionNums `override:"section-nums"`
+	SectionDs      []SectionD  `override:"section-d,element-key=ID"`
+	SectionIgnored SectionIgnored
 }
 
 func ExampleOverrider() {

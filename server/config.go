@@ -46,6 +46,7 @@ type Config struct {
 	Storage    storage.Config    `toml:"storage"`
 	Task       task_store.Config `toml:"task"`
 	InfluxDB   []influxdb.Config `toml:"influxdb"`
+	InfluxDB   []influxdb.Config `toml:"influxdb" override:"influxdb,element-key=name"`
 	Logging    logging.Config    `toml:"logging"`
 	Kubernetes k8s.Config        `toml:"kubernetes"`
 
@@ -53,16 +54,16 @@ type Config struct {
 	Collectd  collectd.Config   `toml:"collectd"`
 	OpenTSDB  opentsdb.Config   `toml:"opentsdb"`
 	UDPs      []udp.Config      `toml:"udp"`
-	SMTP      smtp.Config       `toml:"smtp" co:"smtp"`
-	OpsGenie  opsgenie.Config   `toml:"opsgenie" co:"opsgenie"`
-	VictorOps victorops.Config  `toml:"victorops" co:"opsgenie"`
-	PagerDuty pagerduty.Config  `toml:"pagerduty" co:"pagerduty"`
-	Sensu     sensu.Config      `toml:"sensu" co:"sensu"`
-	Slack     slack.Config      `toml:"slack" co:"slack"`
-	Telegram  telegram.Config   `toml:"telegram" co:"telegram"`
-	HipChat   hipchat.Config    `toml:"hipchat" co:"hipchat"`
-	Alerta    alerta.Config     `toml:"alerta" co:"alerta"`
-	Talk      talk.Config       `toml:"talk" co:"talk"`
+	SMTP      smtp.Config       `toml:"smtp" override:"smtp"`
+	OpsGenie  opsgenie.Config   `toml:"opsgenie" override:"opsgenie"`
+	VictorOps victorops.Config  `toml:"victorops" override:"victorops"`
+	PagerDuty pagerduty.Config  `toml:"pagerduty" override:"pagerduty"`
+	Sensu     sensu.Config      `toml:"sensu" override:"sensu"`
+	Slack     slack.Config      `toml:"slack" override:"slack"`
+	Telegram  telegram.Config   `toml:"telegram" override:"telegram"`
+	HipChat   hipchat.Config    `toml:"hipchat" override:"hipchat"`
+	Alerta    alerta.Config     `toml:"alerta" override:"alerta"`
+	Talk      talk.Config       `toml:"talk" override:"talk"`
 	Reporting reporting.Config  `toml:"reporting"`
 	Stats     stats.Config      `toml:"stats"`
 	UDF       udf.Config        `toml:"udf"`

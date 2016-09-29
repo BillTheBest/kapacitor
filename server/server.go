@@ -357,7 +357,7 @@ func (s *Server) appendVictorOpsService() {
 		s.TaskMaster.VictorOpsService = srv
 
 		s.AppendService("victorops", srv)
-		//s.DynamicServices["victorops"] = srv
+		s.DynamicServices["victorops"] = srv
 	}
 }
 
@@ -674,7 +674,7 @@ type Service interface {
 
 // Updater represents a service that can have its configuration updated while running.
 type Updater interface {
-	Update(c interface{}) error
+	Update(c []interface{}) error
 }
 
 // prof stores the file locations of active profiles.
