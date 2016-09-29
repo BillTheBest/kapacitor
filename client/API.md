@@ -1416,7 +1416,7 @@ GET /kapacitor/v1/config
             "password": true
         }
     ],
-    "smtp": {
+    "smtp": [{
         "enabled": true,
         "host": "smtp.example.com",
         "port": 587,
@@ -1427,7 +1427,7 @@ GET /kapacitor/v1/config
         "to": [ "oncall@example.com"],
         "from": "kapacitor@example.com",
         "idle-timeout": "30s"
-    }
+    }]
 }
 ```
 

@@ -23,7 +23,7 @@ const (
 
 type ConfigUpdate struct {
 	Name      string
-	NewConfig interface{}
+	NewConfig []interface{}
 }
 
 type Service struct {
@@ -76,6 +76,12 @@ func (s *Service) Open() error {
 			Name:        "config",
 			Method:      "GET",
 			Pattern:     configPath,
+			HandlerFunc: s.handleGetConfig,
+		},
+		{
+			Name:        "config",
+			Method:      "GET",
+			Pattern:     configPathAnchored,
 			HandlerFunc: s.handleGetConfig,
 		},
 		{
@@ -197,13 +203,46 @@ func (s *Service) handleUpdateSection(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) handleGetConfig(w http.ResponseWriter, r *http.Request) {
+	section, element := sectionAndElementFromPath(r.URL.Path)
 	config, err := s.getConfig()
 	if err != nil {
 		httpd.HttpError(w, fmt.Sprint("failed to resolve current config:", err), true, http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(config)
+	if section == "" && element == "" {
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(config)
+	} else {
+		sectionList, ok := config[section]
+		for k := range config {
+			log.Println(k)
+		}
+		if !ok {
+			httpd.HttpError(w, fmt.Sprint("unknown section: ", section), true, http.StatusNotFound)
+			return
+		}
+		if element != "" {
+			var elementEntry map[string]interface{}
+			// Find specified element
+			elementKey := s.elementKeys[section]
+			for _, options := range sectionList {
+				if options[elementKey] == element {
+					elementEntry = options
+					break
+				}
+			}
+			if len(elementEntry) > 0 {
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(elementEntry)
+			} else {
+				httpd.HttpError(w, fmt.Sprintf("unknown section/element: %s/%s", section, element), true, http.StatusNotFound)
+				return
+			}
+		} else {
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(sectionList)
+		}
+	}
 }
 
 func (s *Service) applyUpdateAction(ua updateAction) ([]Override, error) {
@@ -302,7 +341,6 @@ func convertOverrides(overrides []Override) []override.Override {
 // getConfig returns a map of a fully resolved configuration object.
 func (s *Service) getConfig() (map[string][]map[string]interface{}, error) {
 	overrides, err := s.overrides.List("")
-	log.Println("D! overrides", overrides)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to retrieve config overrides")
 	}

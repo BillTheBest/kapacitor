@@ -85,9 +85,7 @@ func OverrideFieldName(f reflect.StructField) (name string) {
 // All content after a "," is ignored.
 func tagFieldName(tag string, f reflect.StructField) (name string) {
 	parts := strings.Split(f.Tag.Get(tag), ",")
-	if len(parts) > 0 {
-		name = parts[0]
-	}
+	name = parts[0]
 	if name == "" {
 		name = f.Name
 	}
@@ -494,7 +492,7 @@ func (s Section) Redacted() (map[string]interface{}, error) {
 // getElementKey returns the name of the field taht is used to uniquely identify elements of a list.
 func getElementKey(f reflect.StructField) string {
 	parts := strings.Split(f.Tag.Get(structTagKey), ",")
-	if len(parts) > 0 {
+	if len(parts) > 1 {
 		for _, p := range parts[1:] {
 			if strings.HasPrefix(p, elementKeyword) {
 				return strings.TrimPrefix(p, elementKeyword)
@@ -664,8 +662,6 @@ func (w *sectionWalker) StructField(f reflect.StructField, v reflect.Value) erro
 					value:          v.Interface(),
 					optionNameFunc: w.optionNameFunc,
 				}}
-			} else if k != reflect.Slice {
-				return fmt.Errorf("section field must be a struct or a slice of structs")
 			}
 		}
 	// Skip all other levels
@@ -712,7 +708,7 @@ func (w *sectionWalker) SliceElem(idx int, v reflect.Value) error {
 // If no tag is present the Go field name is returned and the second return value is false.
 func getSectionName(f reflect.StructField) (string, bool) {
 	parts := strings.Split(f.Tag.Get(structTagKey), ",")
-	if len(parts) > 0 {
+	if parts[0] != "" {
 		return parts[0], true
 	}
 	return f.Name, false

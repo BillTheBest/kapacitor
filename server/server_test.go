@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -26,6 +27,7 @@ import (
 	"github.com/influxdata/kapacitor/client/v1"
 	"github.com/influxdata/kapacitor/server"
 	"github.com/influxdata/kapacitor/services/udf"
+	"github.com/influxdata/kapacitor/services/victorops"
 )
 
 var udfDir string
@@ -4629,6 +4631,147 @@ func TestServer_CreateReplay_ValidIDs(t *testing.T) {
 
 		if exp, got := id, replay.ID; got != exp {
 			t.Errorf("unexpected replay ID got %s exp %s", got, exp)
+		}
+	}
+}
+func TestServer_UpdateConfig_InfluxDB(t *testing.T) {
+	// Create default config
+	c := NewConfig()
+	c.InfluxDB[0].Username = "bob"
+	c.InfluxDB[0].Password = "secret"
+	log.Println(c.InfluxDB)
+
+	s := OpenServer(c)
+	cli := Client(s)
+	defer s.Close()
+
+	influxdbSection := cli.ConfigSectionLink("alerta")
+	if section, err := cli.ConfigSection(influxdbSection); err != nil {
+		t.Fatal(err)
+	} else {
+		exp := client.ConfigSection{
+			client.ConfigElement{
+				"name":    "localhost",
+				"enabled": true,
+				"default": true,
+			},
+			client.ConfigElement{
+				"default": false,
+			},
+		}
+		if !reflect.DeepEqual(section, exp) {
+			t.Errorf("unexpected victorops config section\ngot\n%v\nexp\n%v\n", section, exp)
+		}
+	}
+	if sections, err := cli.ConfigSections(); err != nil {
+		t.Fatal(err)
+	} else {
+		exp := client.ConfigSection{
+			client.ConfigElement{
+				"routing-key": "test",
+				"api-key":     true,
+				"enabled":     false,
+				"url":         victorops.DefaultVictorOpsAPIURL,
+				"global":      false,
+			},
+		}
+		if got := sections["influxdb"]; !reflect.DeepEqual(got, exp) {
+			t.Errorf("unexpected victorops config section\ngot\n%v\nexp\n%v\n", got, exp)
+		}
+	}
+	//	// Add an override
+	//	action := client.ConfigUpdateAction{
+	//		Set: map[string]interface{}{
+	//			"enabled": true,
+	//		},
+	//	}
+	//	if err := cli.ConfigUpdate(influxdbSection, action); err != nil {
+	//		t.Fatal(err)
+	//	}
+	//	if section, err := cli.ConfigSection(victorOpsSection); err != nil {
+	//		t.Fatal(err)
+	//	} else {
+	//		exp := client.ConfigSection{
+	//			client.ConfigElement{
+	//				"routing-key": "test",
+	//				"api-key":     true,
+	//				"enabled":     true,
+	//				"url":         victorops.DefaultVictorOpsAPIURL,
+	//				"global":      false,
+	//			},
+	//		}
+	//		if !reflect.DeepEqual(section, exp) {
+	//			t.Errorf("unexpected victorops config section\ngot\n%v\nexp\n%v\n", section, exp)
+	//		}
+	//	}
+}
+
+func TestServer_UpdateConfig_VictorOps(t *testing.T) {
+	// Create default config
+	c := NewConfig()
+	c.VictorOps.RoutingKey = "test"
+	c.VictorOps.APIKey = "secret"
+
+	s := OpenServer(c)
+	cli := Client(s)
+	defer s.Close()
+
+	victorOpsSection := cli.ConfigSectionLink("victorops")
+	if section, err := cli.ConfigSection(victorOpsSection); err != nil {
+		t.Fatal(err)
+	} else {
+		exp := client.ConfigSection{
+			client.ConfigElement{
+				"routing-key": "test",
+				"api-key":     true,
+				"enabled":     false,
+				"url":         victorops.DefaultVictorOpsAPIURL,
+				"global":      false,
+			},
+		}
+		if !reflect.DeepEqual(section, exp) {
+			t.Errorf("unexpected victorops config section\ngot\n%v\nexp\n%v\n", section, exp)
+		}
+	}
+	if sections, err := cli.ConfigSections(); err != nil {
+		t.Fatal(err)
+	} else {
+		exp := client.ConfigSection{
+			client.ConfigElement{
+				"routing-key": "test",
+				"api-key":     true,
+				"enabled":     false,
+				"url":         victorops.DefaultVictorOpsAPIURL,
+				"global":      false,
+			},
+		}
+		if got := sections["victorops"]; !reflect.DeepEqual(got, exp) {
+			t.Errorf("unexpected victorops config section\ngot\n%v\nexp\n%v\n", got, exp)
+		}
+	}
+	// Add an override
+	action := client.ConfigUpdateAction{
+		Set: map[string]interface{}{
+			"enabled": true,
+		},
+	}
+	if err := cli.ConfigUpdate(victorOpsSection, action); err != nil {
+		t.Fatal(err)
+	}
+	if section, err := cli.ConfigSection(victorOpsSection); err != nil {
+		t.Fatal(err)
+	} else {
+		exp := client.ConfigSection{
+			client.ConfigElement{
+				"routing-key": "test",
+				"api-key":     true,
+				"enabled":     true,
+				"url":         victorops.DefaultVictorOpsAPIURL,
+				"global":      false,
+			},
+		}
+		if !reflect.DeepEqual(section, exp) {
+			t.Errorf("unexpected victorops config section\ngot\n%v\nexp\n%v\n", section, exp)
 		}
 	}
 }
