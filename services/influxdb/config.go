@@ -69,7 +69,7 @@ func NewConfig() Config {
 	}
 }
 
-func (c *Config) SetDefaultValues() {
+func (c *Config) Default() {
 	if c.UDPBuffer == 0 {
 		c.UDPBuffer = udp.DefaultBuffer
 	}

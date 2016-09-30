@@ -206,7 +206,6 @@ func (s *Service) handleUpdateSection(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	section, element := sectionAndElementFromPath(r.URL.Path)
-	log.Println("D! handleGetConfig", section, element)
 	config, err := s.getConfig(section)
 	if err != nil {
 		httpd.HttpError(w, fmt.Sprint("failed to resolve current config:", err), true, http.StatusInternalServerError)
@@ -216,11 +215,7 @@ func (s *Service) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(config)
 	} else {
-		log.Println("D! getting section", config)
 		sectionList, ok := config[section]
-		for k := range config {
-			log.Println("D!", section, k)
-		}
 		if !ok {
 			httpd.HttpError(w, fmt.Sprint("unknown section: ", section), true, http.StatusNotFound)
 			return
@@ -345,7 +340,6 @@ func convertOverrides(overrides []Override) []override.Override {
 // getConfig returns a map of a fully resolved configuration object.
 func (s *Service) getConfig(section string) (map[string][]map[string]interface{}, error) {
 	overrides, err := s.overrides.List(section)
-	log.Println("D! overrides", overrides)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to retrieve config overrides")
 	}
@@ -354,7 +348,6 @@ func (s *Service) getConfig(section string) (map[string][]map[string]interface{}
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to apply configuration overrides")
 	}
-	log.Println("D! sections", sections)
 	config := make(map[string][]map[string]interface{}, len(sections))
 	for name, sectionList := range sections {
 		if !strings.HasPrefix(name, section) {
@@ -369,6 +362,5 @@ func (s *Service) getConfig(section string) (map[string][]map[string]interface{}
 			config[name] = append(config[name], redacted)
 		}
 	}
-	log.Println("D! config", config)
 	return config, nil
 }

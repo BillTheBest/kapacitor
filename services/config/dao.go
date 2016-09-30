@@ -2,7 +2,7 @@ package config
 
 import (
 	"bytes"
-	"encoding/gob"
+	"encoding/json"
 	"errors"
 
 	"github.com/influxdata/kapacitor/services/storage"
@@ -68,22 +68,20 @@ func newOverrideKV(store storage.Interface) *overrideKV {
 	}
 }
 
-func init() {
-	// Register various interface types
-	gob.Register([]interface{}{})
-	gob.Register(map[string]interface{}{})
-}
-
-func (d *overrideKV) encodeOverride(t Override) ([]byte, error) {
+func (d *overrideKV) encodeOverride(o Override) ([]byte, error) {
 	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	err := enc.Encode(t)
+	// Using JSON encoding since gob doesn't handle arbitrary interfaces well,
+	// and this data is shipped over the wire via JSON so we know it will work.
+	enc := json.NewEncoder(&buf)
+	err := enc.Encode(o)
 	return buf.Bytes(), err
 }
 
 func (d *overrideKV) decodeOverride(data []byte) (Override, error) {
 	var override Override
-	dec := gob.NewDecoder(bytes.NewReader(data))
+	dec := json.NewDecoder(bytes.NewReader(data))
+	// Do not convert all nums to float64, rather use json.Number which is a Stringer
+	dec.UseNumber()
 	err := dec.Decode(&override)
 	return override, err
 }
