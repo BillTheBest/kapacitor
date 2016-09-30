@@ -112,17 +112,18 @@ func New(c *Config, buildInfo BuildInfo, logService logging.Interface) (*Server,
 	}
 	l := logService.NewLogger("[srv] ", log.LstdFlags)
 	s := &Server{
-		config:         c,
-		BuildInfo:      buildInfo,
-		dataDir:        c.DataDir,
-		hostname:       c.Hostname,
-		err:            make(chan error),
-		configUpdates:  make(chan config.ConfigUpdate, 100),
-		LogService:     logService,
-		MetaClient:     &kapacitor.NoopMetaClient{},
-		QueryExecutor:  &Queryexecutor{},
-		Logger:         l,
-		ServicesByName: make(map[string]int),
+		config:          c,
+		BuildInfo:       buildInfo,
+		dataDir:         c.DataDir,
+		hostname:        c.Hostname,
+		err:             make(chan error),
+		configUpdates:   make(chan config.ConfigUpdate, 100),
+		LogService:      logService,
+		MetaClient:      &kapacitor.NoopMetaClient{},
+		QueryExecutor:   &Queryexecutor{},
+		Logger:          l,
+		ServicesByName:  make(map[string]int),
+		DynamicServices: make(map[string]Updater),
 	}
 	s.Logger.Println("I! Kapacitor hostname:", s.hostname)
 
@@ -345,7 +346,7 @@ func (s *Server) appendOpsGenieService() {
 		s.TaskMaster.OpsGenieService = srv
 
 		s.AppendService("opsgenie", srv)
-		//s.DynamicServices["opsgenie"] = srv
+		s.DynamicServices["opsgenie"] = srv
 	}
 }
 
@@ -370,7 +371,7 @@ func (s *Server) appendPagerDutyService() {
 		s.TaskMaster.PagerDutyService = srv
 
 		s.AppendService("pagerduty", srv)
-		//s.DynamicServices["pagerduty"] = srv
+		s.DynamicServices["pagerduty"] = srv
 	}
 }
 
@@ -382,7 +383,7 @@ func (s *Server) appendSensuService() {
 		s.TaskMaster.SensuService = srv
 
 		s.AppendService("sensu", srv)
-		//s.DynamicServices["sensu"] = srv
+		s.DynamicServices["sensu"] = srv
 	}
 }
 
@@ -394,7 +395,7 @@ func (s *Server) appendSlackService() {
 		s.TaskMaster.SlackService = srv
 
 		s.AppendService("slack", srv)
-		//s.DynamicServices["slack"] = srv
+		s.DynamicServices["slack"] = srv
 	}
 }
 
@@ -406,7 +407,7 @@ func (s *Server) appendTelegramService() {
 		s.TaskMaster.TelegramService = srv
 
 		s.AppendService("telegram", srv)
-		//s.DynamicServices["telegram"] = srv
+		s.DynamicServices["telegram"] = srv
 	}
 }
 
@@ -418,7 +419,7 @@ func (s *Server) appendHipChatService() {
 		s.TaskMaster.HipChatService = srv
 
 		s.AppendService("hipchat", srv)
-		//s.DynamicServices["hipchat"] = srv
+		s.DynamicServices["hipchat"] = srv
 	}
 }
 
@@ -430,7 +431,7 @@ func (s *Server) appendAlertaService() {
 		s.TaskMaster.AlertaService = srv
 
 		s.AppendService("alerta", srv)
-		//s.DynamicServices["alerta"] = srv
+		s.DynamicServices["alerta"] = srv
 	}
 }
 
@@ -442,7 +443,7 @@ func (s *Server) appendTalkService() {
 		s.TaskMaster.TalkService = srv
 
 		s.AppendService("talk", srv)
-		//s.DynamicServices["talk"] = srv
+		s.DynamicServices["talk"] = srv
 	}
 }
 

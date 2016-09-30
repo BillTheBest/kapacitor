@@ -321,7 +321,6 @@ func (w *overrideWalker) StructField(f reflect.StructField, v reflect.Value) err
 			if !w.o.Create && name == w.elementKey {
 				return fmt.Errorf("cannot override element key %s", name)
 			}
-			log.Println("D! copy option", name)
 			if err := weakCopyValue(reflect.ValueOf(setValue), v); err != nil {
 				return errors.Wrapf(err, "cannot set option %s", name)
 			}
@@ -468,9 +467,6 @@ func weakCopyValue(src, dst reflect.Value) (err error) {
 		addrDst = d.Addr()
 	}
 
-	if dstK == reflect.Int64 {
-		log.Println("D! weakCopyValue", dst, dst.Type())
-	}
 	if srcK == dstK {
 		if dst.Type() == src.Type() {
 			// Perform normal copy
