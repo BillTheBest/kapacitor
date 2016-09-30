@@ -72,7 +72,7 @@ type TestConfig struct {
 	IgnoredString  string
 }
 
-func ExampleOverrider() {
+func ExampleOverrider_Override() {
 	config := &TestConfig{
 		SectionA: SectionA{
 			Option1: "o1",
