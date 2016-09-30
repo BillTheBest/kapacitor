@@ -27,6 +27,7 @@ import (
 	"github.com/influxdata/kapacitor/server"
 	"github.com/influxdata/kapacitor/services/udf"
 	"github.com/influxdata/kapacitor/services/victorops"
+	"github.com/pkg/errors"
 )
 
 var udfDir string
@@ -4636,6 +4637,7 @@ func TestServer_CreateReplay_ValidIDs(t *testing.T) {
 
 func TestServer_UpdateConfig(t *testing.T) {
 	type updateAction struct {
+		element      string
 		updateAction client.ConfigUpdateAction
 		expSection   client.ConfigSection
 		expElement   client.ConfigElement
@@ -4707,9 +4709,9 @@ func TestServer_UpdateConfig(t *testing.T) {
 				{
 					updateAction: client.ConfigUpdateAction{
 						Set: map[string]interface{}{
-							"default": true,
-							//"subscription-protocol": "https",
-							"subscriptions": map[string][]string{"_internal": []string{"monitor"}},
+							"default":               true,
+							"subscription-protocol": "https",
+							"subscriptions":         map[string][]string{"_internal": []string{"monitor"}},
 						},
 					},
 					expSection: client.ConfigSection{client.ConfigElement{
@@ -4759,6 +4761,90 @@ func TestServer_UpdateConfig(t *testing.T) {
 						"udp-read-buffer":             float64(0),
 						"urls":                        []interface{}{"http://localhost:8086"},
 						"username":                    "bob",
+					},
+				},
+				{
+					updateAction: client.ConfigUpdateAction{
+						Add: map[string]interface{}{
+							"name":    "new",
+							"enabled": true,
+							"urls":    []string{"http://new.example.com:8086"},
+						},
+					},
+					expSection: client.ConfigSection{
+						client.ConfigElement{
+							"default":                     true,
+							"disable-subscriptions":       false,
+							"enabled":                     false,
+							"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
+							"http-port":                   float64(0),
+							"insecure-skip-verify":        false,
+							"kapacitor-hostname":          "",
+							"name":                        "default",
+							"password":                    true,
+							"ssl-ca":                      "",
+							"ssl-cert":                    "",
+							"ssl-key":                     "",
+							"startup-timeout":             "5m0s",
+							"subscription-protocol":       "https",
+							"subscriptions":               map[string]interface{}{"_internal": []interface{}{"monitor"}},
+							"subscriptions-sync-interval": "1m0s",
+							"timeout":                     "0",
+							"udp-bind":                    "",
+							"udp-buffer":                  float64(1e3),
+							"udp-read-buffer":             float64(0),
+							"urls":                        []interface{}{"http://localhost:8086"},
+							"username":                    "bob",
+						},
+						client.ConfigElement{
+							"default":                     true,
+							"disable-subscriptions":       false,
+							"enabled":                     false,
+							"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
+							"http-port":                   float64(0),
+							"insecure-skip-verify":        false,
+							"kapacitor-hostname":          "",
+							"name":                        "new",
+							"password":                    false,
+							"ssl-ca":                      "",
+							"ssl-cert":                    "",
+							"ssl-key":                     "",
+							"startup-timeout":             "5m0s",
+							"subscription-protocol":       "http",
+							"subscriptions":               map[string]interface{}{},
+							"subscriptions-sync-interval": "1m0s",
+							"timeout":                     "0",
+							"udp-bind":                    "",
+							"udp-buffer":                  float64(1e3),
+							"udp-read-buffer":             float64(0),
+							"urls":                        []interface{}{"http://localhost:8086"},
+							"username":                    "",
+						},
+					},
+					element: "new",
+					expElement: client.ConfigElement{
+						"default":                     true,
+						"disable-subscriptions":       false,
+						"enabled":                     false,
+						"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
+						"http-port":                   float64(0),
+						"insecure-skip-verify":        false,
+						"kapacitor-hostname":          "",
+						"name":                        "new",
+						"password":                    false,
+						"ssl-ca":                      "",
+						"ssl-cert":                    "",
+						"ssl-key":                     "",
+						"startup-timeout":             "5m0s",
+						"subscription-protocol":       "http",
+						"subscriptions":               map[string]interface{}{},
+						"subscriptions-sync-interval": "1m0s",
+						"timeout":                     "0",
+						"udp-bind":                    "",
+						"udp-buffer":                  float64(1e3),
+						"udp-read-buffer":             float64(0),
+						"urls":                        []interface{}{"http://localhost:8086"},
+						"username":                    "",
 					},
 				},
 			},
@@ -4810,42 +4896,69 @@ func TestServer_UpdateConfig(t *testing.T) {
 		},
 	}
 
+	compareElements := func(got, exp client.ConfigElement) error {
+		for k, v := range exp {
+			if g, ok := got[k]; !ok {
+				return fmt.Errorf("missing option %s", k)
+			} else if !reflect.DeepEqual(g, v) {
+				return fmt.Errorf("unexpected config option %s got %#v exp %#v", k, g, v)
+			}
+		}
+		for k := range got {
+			if v, ok := exp[k]; !ok {
+				return fmt.Errorf("extra option %s with value %#v", k, v)
+			}
+		}
+		return nil
+	}
+	compareSections := func(got, exp client.ConfigSection) error {
+		if len(got) != len(exp) {
+			return fmt.Errorf("sections are different lengths, got %d exp %d", len(got), len(exp))
+		}
+		for i := range exp {
+			if err := compareElements(got[i], exp[i]); err != nil {
+				return errors.Wrapf(err, "section element %d are not equal", i)
+			}
+		}
+		return nil
+	}
+
 	validate := func(
-		t *testing.T,
 		cli *client.Client,
 		section,
 		element string,
 		expSection client.ConfigSection,
 		expElement client.ConfigElement,
-	) {
+	) error {
 		// Get all sections
 		if sections, err := cli.ConfigSections(); err != nil {
-			t.Fatal(err)
+			return err
 		} else {
-			if got, exp := sections[section], expSection; !reflect.DeepEqual(got, exp) {
-				t.Errorf("unexpected config sections\ngot\n%#v\nexp\n%#v\n", got, exp)
+			if err := compareSections(sections[section], expSection); err != nil {
+				return fmt.Errorf("%s: %v", section, err)
 			}
 		}
 		// Get the specific section
 		sectionLink := cli.ConfigSectionLink(section)
-		if section, err := cli.ConfigSection(sectionLink); err != nil {
-			t.Fatal(err)
+		if got, err := cli.ConfigSection(sectionLink); err != nil {
+			return err
 		} else {
-			if got, exp := section, expSection; !reflect.DeepEqual(got, exp) {
-				t.Errorf("unexpected config section\ngot\n%#v\nexp\n%#v\n", got, exp)
+			if err := compareSections(got, expSection); err != nil {
+				return fmt.Errorf("%s: %v", section, err)
 			}
 		}
 		if element != "" {
 			elementLink := cli.ConfigElementLink(section, element)
 			// Get the specific element
-			if element, err := cli.ConfigElement(elementLink); err != nil {
-				t.Fatal(err)
+			if got, err := cli.ConfigElement(elementLink); err != nil {
+				return err
 			} else {
-				if got, exp := element, expElement; !reflect.DeepEqual(got, exp) {
-					t.Errorf("unexpected config element\ngot\n%#v\nexp\n%#v\n", got, exp)
+				if err := compareElements(got, expElement); err != nil {
+					return fmt.Errorf("%s/%s: %v", section, element, err)
 				}
 			}
 		}
+		return nil
 	}
 
 	for _, tc := range testCases {
@@ -4858,18 +4971,33 @@ func TestServer_UpdateConfig(t *testing.T) {
 		cli := Client(s)
 		defer s.Close()
 
-		validate(t, cli, tc.section, tc.element, tc.expDefaultSection, tc.expDefaultElement)
-
-		link := cli.ConfigSectionLink(tc.section)
-		if tc.element != "" {
-			link = cli.ConfigElementLink(tc.section, tc.element)
+		if err := validate(cli, tc.section, tc.element, tc.expDefaultSection, tc.expDefaultElement); err != nil {
+			t.Errorf("unexpected defaults for %s/%s: %v", tc.section, tc.element, err)
 		}
-		for _, ua := range tc.updates {
+
+		for i, ua := range tc.updates {
+			element := tc.element
+			if ua.element != "" {
+				element = ua.element
+			}
+
+			link := cli.ConfigSectionLink(tc.section)
+			if element != "" {
+				link = cli.ConfigElementLink(tc.section, tc.element)
+			}
+
+			if len(ua.updateAction.Add) > 0 ||
+				len(ua.updateAction.Remove) > 0 {
+				link = cli.ConfigSectionLink(tc.section)
+			}
+
 			// Add an override
 			if err := cli.ConfigUpdate(link, ua.updateAction); err != nil {
 				t.Fatal(err)
 			}
-			validate(t, cli, tc.section, tc.element, ua.expSection, ua.expElement)
+			if err := validate(cli, tc.section, element, ua.expSection, ua.expElement); err != nil {
+				t.Errorf("unexpected update result %d for %s/%s: %v", i, tc.section, element, err)
+			}
 		}
 	}
 }

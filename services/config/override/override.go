@@ -280,13 +280,10 @@ func (w *overrideWalker) Struct(reflect.Value) error {
 }
 
 func (w *overrideWalker) StructField(f reflect.StructField, v reflect.Value) error {
-	name, _ := getSectionName(f)
-	log.Println("D! overrideWalker StructField", w.depth, name)
 	switch w.depth {
 	// Section level
 	case 0:
 		name, ok := getSectionName(f)
-		log.Println("D! overrideWalker getSectionName", name, ok)
 		if ok {
 			// Only override the section if a struct tag was present
 			w.currentSectionName = name
@@ -305,7 +302,6 @@ func (w *overrideWalker) StructField(f reflect.StructField, v reflect.Value) err
 		}
 
 		name := w.optionNameFunc(f)
-		log.Println("D! overrideWalker optionName", name)
 		setValue, ok := w.o.Options[name]
 		if ok {
 			if !w.o.Create && name == w.elementKey {
@@ -314,20 +310,26 @@ func (w *overrideWalker) StructField(f reflect.StructField, v reflect.Value) err
 			if err := weakCopyValue(reflect.ValueOf(setValue), v); err != nil {
 				return errors.Wrapf(err, "cannot set option %s", name)
 			}
-			log.Println("D! overrideWalker optionName used", name)
 			w.used[name] = true
 		}
-		log.Println("D! overrideWalker optionName done", name)
 	}
 	return nil
 }
 
+// Defaulter set defaults on the receiving object.
+// If a type is a Defaulter and a new value needs to be created of that type,
+// then Default() is called on a new instance of that type.
+type Defaulter interface {
+	Default()
+}
+
+var defaulterType = reflect.TypeOf((*Defaulter)(nil)).Elem()
+
 func (w *overrideWalker) Slice(v reflect.Value) error {
-	log.Println("D! overrideWalker Slice", w.depth, v)
-	w.currentSlice = v
-	if w.o.Section != w.currentSectionName {
+	if w.o.Section != w.currentSectionName || w.depth != 1 {
 		return nil
 	}
+	w.currentSlice = v
 	switch {
 	case w.o.Delete:
 		// Explictly set the section value to the zero value
@@ -339,7 +341,15 @@ func (w *overrideWalker) Slice(v reflect.Value) error {
 		if et.Kind() == reflect.Ptr {
 			n = reflect.New(et.Elem())
 		} else {
-			n = reflect.Zero(et)
+			n = reflect.New(et)
+		}
+		// If the type is a defaulter, call Default
+		if n.Type().Implements(defaulterType) {
+			n.Interface().(Defaulter).Default()
+		}
+		// Indirect the value if we didn't want a pointer
+		if et.Kind() != reflect.Ptr {
+			n = reflect.Indirect(n)
 		}
 		v.Set(reflect.Append(v, n))
 		// Set element key
@@ -379,7 +389,6 @@ func (w *overrideWalker) Slice(v reflect.Value) error {
 }
 
 func (w *overrideWalker) SliceElem(idx int, v reflect.Value) error {
-	log.Println("D! overrideWalker SliceElem", idx, w.depth)
 	if w.depth == 1 && w.currentSectionName == w.o.Section && w.o.Element != "" {
 		w.currentElementName = ""
 		if w.elementKey != "" {
@@ -413,7 +422,7 @@ func (w *overrideWalker) SliceElem(idx int, v reflect.Value) error {
 	return nil
 }
 
-// weakCopyValue copies the value of dst into src, where numeric types are copied weakly.
+// weakCopyValue copies the value of dst into src, where numeric and interface types are copied weakly.
 func weakCopyValue(src, dst reflect.Value) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -427,41 +436,86 @@ func weakCopyValue(src, dst reflect.Value) (err error) {
 	if !dst.CanSet() {
 		return errors.New("not settable")
 	}
+	if src.Kind() == reflect.Interface {
+		src = src.Elem()
+	}
 	srcK := src.Kind()
 	dstK := dst.Kind()
 	if srcK == dstK {
-		// Perform normal copy
-		dst.Set(src)
-		return nil
+		if dst.Type() == src.Type() {
+			// Perform normal copy
+			dst.Set(src)
+		} else {
+			switch dstK {
+			case reflect.Map:
+				if dst.IsNil() {
+					dst.Set(reflect.MakeMap(dst.Type()))
+				}
+				for _, key := range src.MapKeys() {
+					value := reflect.Indirect(reflect.New(dst.Type().Elem()))
+					if err := weakCopyValue(src.MapIndex(key), value); err != nil {
+						return errors.Wrap(err, "failed to copy map value")
+					}
+					dst.SetMapIndex(key, value)
+				}
+			case reflect.Slice, reflect.Array:
+				if dstK == reflect.Slice && dst.IsNil() {
+					dst.Set(reflect.MakeSlice(dst.Type(), src.Len(), src.Len()))
+				}
+				for i := 0; i < src.Len(); i++ {
+					value := reflect.Indirect(reflect.New(dst.Type().Elem()))
+					if err := weakCopyValue(src.Index(i), value); err != nil {
+						return errors.Wrap(err, "failed to copy slice value")
+					}
+					dst.Index(i).Set(value)
+				}
+			default:
+				return fmt.Errorf("cannot copy mismatched types got %s exp %s", src.Type().String(), dst.Type().String())
+			}
+		}
 	} else if isNumericKind(dstK) {
 		// Perform weak numeric copy
 		if isNumericKind(srcK) {
 			dst.Set(src.Convert(dst.Type()))
 			return nil
-		}
-		// Check for string kind
-		if srcK == reflect.String {
+		} else {
+			var str string
+			if src.Type().Implements(stringerType) || srcK == reflect.String {
+				str = src.String()
+			} else {
+				return fmt.Errorf("cannot convert %s into %s", srcK, dstK)
+			}
 			switch {
 			case isIntKind(dstK):
-				if i, err := strconv.ParseInt(src.String(), 10, 64); err == nil {
+				if i, err := strconv.ParseInt(str, 10, 64); err == nil {
 					dst.SetInt(i)
-					return nil
 				}
 			case isUintKind(dstK):
-				if i, err := strconv.ParseUint(src.String(), 10, 64); err == nil {
+				if i, err := strconv.ParseUint(str, 10, 64); err == nil {
 					dst.SetUint(i)
-					return nil
 				}
 			case isFloatKind(dstK):
-				if f, err := strconv.ParseFloat(src.String(), 64); err == nil {
+				if f, err := strconv.ParseFloat(str, 64); err == nil {
 					dst.SetFloat(f)
-					return nil
 				}
+			default:
+				return fmt.Errorf("cannot convert string into %s", dstK)
 			}
 		}
+	} else {
+		return fmt.Errorf("wrong kind %s, expected value of kind %s: %t", srcK, dstK, srcK == dstK)
 	}
-	return fmt.Errorf("wrong type %s, expected value of type %s", srcK, dstK)
+	return nil
 }
+
+// Stringer is a type that can provide a string value of itself.
+// If a value is a Stringer and needs to be copied into a numeric value,
+// then String() is called and parsed as a numeric value if possible.
+type Stringer interface {
+	String() string
+}
+
+var stringerType = reflect.TypeOf((*Stringer)(nil)).Elem()
 
 func isNumericKind(k reflect.Kind) bool {
 	// Ignoring complex kinds since we cannot convert them
@@ -680,6 +734,8 @@ func (w *sectionWalker) StructField(f reflect.StructField, v reflect.Value) erro
 					optionNameFunc: w.optionNameFunc,
 				}}
 			}
+		} else {
+			w.currentSectionName = ""
 		}
 	// Skip all other levels
 	default:
@@ -692,6 +748,10 @@ func (w *sectionWalker) Slice(reflect.Value) error {
 }
 
 func (w *sectionWalker) SliceElem(idx int, v reflect.Value) error {
+	// Skip sections that we are not interested in
+	if w.currentSectionName == "" {
+		return nil
+	}
 	switch w.depth {
 	//Option level
 	case 1:
@@ -699,7 +759,7 @@ func (w *sectionWalker) SliceElem(idx int, v reflect.Value) error {
 		var element string
 		elementKey, ok := w.elementKeys[w.currentSectionName]
 		if !ok {
-			return fmt.Errorf("no element key found for section %s", w.currentSectionName)
+			return fmt.Errorf("no element key found for section %q, %v", w.currentSectionName, v)
 		}
 		elementField := findFieldByElementKey(v, elementKey, w.optionNameFunc)
 		if elementField.IsValid() {
