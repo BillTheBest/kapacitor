@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -4634,144 +4633,243 @@ func TestServer_CreateReplay_ValidIDs(t *testing.T) {
 		}
 	}
 }
-func TestServer_UpdateConfig_InfluxDB(t *testing.T) {
-	// Create default config
-	c := NewConfig()
-	c.InfluxDB[0].Username = "bob"
-	c.InfluxDB[0].Password = "secret"
-	log.Println(c.InfluxDB)
 
-	s := OpenServer(c)
-	cli := Client(s)
-	defer s.Close()
-
-	influxdbSection := cli.ConfigSectionLink("alerta")
-	if section, err := cli.ConfigSection(influxdbSection); err != nil {
-		t.Fatal(err)
-	} else {
-		exp := client.ConfigSection{
-			client.ConfigElement{
-				"name":    "localhost",
-				"enabled": true,
-				"default": true,
-			},
-			client.ConfigElement{
-				"default": false,
-			},
-		}
-		if !reflect.DeepEqual(section, exp) {
-			t.Errorf("unexpected victorops config section\ngot\n%v\nexp\n%v\n", section, exp)
-		}
+func TestServer_UpdateConfig(t *testing.T) {
+	type updateAction struct {
+		updateAction client.ConfigUpdateAction
+		expSection   client.ConfigSection
+		expElement   client.ConfigElement
 	}
-	if sections, err := cli.ConfigSections(); err != nil {
-		t.Fatal(err)
-	} else {
-		exp := client.ConfigSection{
-			client.ConfigElement{
-				"routing-key": "test",
+	testCases := []struct {
+		section           string
+		element           string
+		setDefaults       func(*server.Config)
+		expDefaultSection client.ConfigSection
+		expDefaultElement client.ConfigElement
+		updates           []updateAction
+	}{
+		{
+			section: "influxdb",
+			element: "default",
+			setDefaults: func(c *server.Config) {
+				c.InfluxDB[0].Username = "bob"
+				c.InfluxDB[0].Password = "secret"
+			},
+			expDefaultSection: client.ConfigSection{client.ConfigElement{
+				"default":                     false,
+				"disable-subscriptions":       false,
+				"enabled":                     false,
+				"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
+				"http-port":                   float64(0),
+				"insecure-skip-verify":        false,
+				"kapacitor-hostname":          "",
+				"name":                        "default",
+				"password":                    true,
+				"ssl-ca":                      "",
+				"ssl-cert":                    "",
+				"ssl-key":                     "",
+				"startup-timeout":             "5m0s",
+				"subscription-protocol":       "http",
+				"subscriptions":               map[string]interface{}{},
+				"subscriptions-sync-interval": "1m0s",
+				"timeout":                     "0",
+				"udp-bind":                    "",
+				"udp-buffer":                  float64(1e3),
+				"udp-read-buffer":             float64(0),
+				"urls":                        []interface{}{"http://localhost:8086"},
+				"username":                    "bob",
+			}},
+			expDefaultElement: client.ConfigElement{
+				"default":                     false,
+				"disable-subscriptions":       false,
+				"enabled":                     false,
+				"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
+				"http-port":                   float64(0),
+				"insecure-skip-verify":        false,
+				"kapacitor-hostname":          "",
+				"name":                        "default",
+				"password":                    true,
+				"ssl-ca":                      "",
+				"ssl-cert":                    "",
+				"ssl-key":                     "",
+				"startup-timeout":             "5m0s",
+				"subscription-protocol":       "http",
+				"subscriptions":               map[string]interface{}{},
+				"subscriptions-sync-interval": "1m0s",
+				"timeout":                     "0",
+				"udp-bind":                    "",
+				"udp-buffer":                  float64(1e3),
+				"udp-read-buffer":             float64(0),
+				"urls":                        []interface{}{"http://localhost:8086"},
+				"username":                    "bob",
+			},
+			updates: []updateAction{
+				{
+					updateAction: client.ConfigUpdateAction{
+						Set: map[string]interface{}{
+							"default": true,
+							//"subscription-protocol": "https",
+							"subscriptions": map[string][]string{"_internal": []string{"monitor"}},
+						},
+					},
+					expSection: client.ConfigSection{client.ConfigElement{
+						"default":                     true,
+						"disable-subscriptions":       false,
+						"enabled":                     false,
+						"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
+						"http-port":                   float64(0),
+						"insecure-skip-verify":        false,
+						"kapacitor-hostname":          "",
+						"name":                        "default",
+						"password":                    true,
+						"ssl-ca":                      "",
+						"ssl-cert":                    "",
+						"ssl-key":                     "",
+						"startup-timeout":             "5m0s",
+						"subscription-protocol":       "https",
+						"subscriptions":               map[string]interface{}{"_internal": []interface{}{"monitor"}},
+						"subscriptions-sync-interval": "1m0s",
+						"timeout":                     "0",
+						"udp-bind":                    "",
+						"udp-buffer":                  float64(1e3),
+						"udp-read-buffer":             float64(0),
+						"urls":                        []interface{}{"http://localhost:8086"},
+						"username":                    "bob",
+					}},
+					expElement: client.ConfigElement{
+						"default":                     true,
+						"disable-subscriptions":       false,
+						"enabled":                     false,
+						"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
+						"http-port":                   float64(0),
+						"insecure-skip-verify":        false,
+						"kapacitor-hostname":          "",
+						"name":                        "default",
+						"password":                    true,
+						"ssl-ca":                      "",
+						"ssl-cert":                    "",
+						"ssl-key":                     "",
+						"startup-timeout":             "5m0s",
+						"subscription-protocol":       "https",
+						"subscriptions":               map[string]interface{}{"_internal": []interface{}{"monitor"}},
+						"subscriptions-sync-interval": "1m0s",
+						"timeout":                     "0",
+						"udp-bind":                    "",
+						"udp-buffer":                  float64(1e3),
+						"udp-read-buffer":             float64(0),
+						"urls":                        []interface{}{"http://localhost:8086"},
+						"username":                    "bob",
+					},
+				},
+			},
+		},
+		{
+			section: "victorops",
+			setDefaults: func(c *server.Config) {
+				c.VictorOps.RoutingKey = "test"
+				c.VictorOps.APIKey = "secret"
+			},
+			expDefaultSection: client.ConfigSection{client.ConfigElement{
 				"api-key":     true,
 				"enabled":     false,
-				"url":         victorops.DefaultVictorOpsAPIURL,
 				"global":      false,
-			},
-		}
-		if got := sections["influxdb"]; !reflect.DeepEqual(got, exp) {
-			t.Errorf("unexpected victorops config section\ngot\n%v\nexp\n%v\n", got, exp)
-		}
-	}
-	//	// Add an override
-	//	action := client.ConfigUpdateAction{
-	//		Set: map[string]interface{}{
-	//			"enabled": true,
-	//		},
-	//	}
-	//	if err := cli.ConfigUpdate(influxdbSection, action); err != nil {
-	//		t.Fatal(err)
-	//	}
-	//	if section, err := cli.ConfigSection(victorOpsSection); err != nil {
-	//		t.Fatal(err)
-	//	} else {
-	//		exp := client.ConfigSection{
-	//			client.ConfigElement{
-	//				"routing-key": "test",
-	//				"api-key":     true,
-	//				"enabled":     true,
-	//				"url":         victorops.DefaultVictorOpsAPIURL,
-	//				"global":      false,
-	//			},
-	//		}
-	//		if !reflect.DeepEqual(section, exp) {
-	//			t.Errorf("unexpected victorops config section\ngot\n%v\nexp\n%v\n", section, exp)
-	//		}
-	//	}
-}
-
-func TestServer_UpdateConfig_VictorOps(t *testing.T) {
-	// Create default config
-	c := NewConfig()
-	c.VictorOps.RoutingKey = "test"
-	c.VictorOps.APIKey = "secret"
-
-	s := OpenServer(c)
-	cli := Client(s)
-	defer s.Close()
-
-	victorOpsSection := cli.ConfigSectionLink("victorops")
-	if section, err := cli.ConfigSection(victorOpsSection); err != nil {
-		t.Fatal(err)
-	} else {
-		exp := client.ConfigSection{
-			client.ConfigElement{
 				"routing-key": "test",
+				"url":         victorops.DefaultVictorOpsAPIURL,
+			}},
+			expDefaultElement: client.ConfigElement{
 				"api-key":     true,
 				"enabled":     false,
-				"url":         victorops.DefaultVictorOpsAPIURL,
 				"global":      false,
-			},
-		}
-		if !reflect.DeepEqual(section, exp) {
-			t.Errorf("unexpected victorops config section\ngot\n%v\nexp\n%v\n", section, exp)
-		}
-	}
-	if sections, err := cli.ConfigSections(); err != nil {
-		t.Fatal(err)
-	} else {
-		exp := client.ConfigSection{
-			client.ConfigElement{
 				"routing-key": "test",
-				"api-key":     true,
-				"enabled":     false,
 				"url":         victorops.DefaultVictorOpsAPIURL,
-				"global":      false,
 			},
-		}
-		if got := sections["victorops"]; !reflect.DeepEqual(got, exp) {
-			t.Errorf("unexpected victorops config section\ngot\n%v\nexp\n%v\n", got, exp)
-		}
-	}
-	// Add an override
-	action := client.ConfigUpdateAction{
-		Set: map[string]interface{}{
-			"enabled": true,
+			updates: []updateAction{
+				{
+					updateAction: client.ConfigUpdateAction{
+						Set: map[string]interface{}{
+							"api-key": "",
+							"global":  true,
+						},
+					},
+					expSection: client.ConfigSection{client.ConfigElement{
+						"api-key":     false,
+						"enabled":     false,
+						"global":      true,
+						"routing-key": "test",
+						"url":         victorops.DefaultVictorOpsAPIURL,
+					}},
+					expElement: client.ConfigElement{
+						"api-key":     false,
+						"enabled":     false,
+						"global":      true,
+						"routing-key": "test",
+						"url":         victorops.DefaultVictorOpsAPIURL,
+					},
+				},
+			},
 		},
 	}
-	if err := cli.ConfigUpdate(victorOpsSection, action); err != nil {
-		t.Fatal(err)
-	}
-	if section, err := cli.ConfigSection(victorOpsSection); err != nil {
-		t.Fatal(err)
-	} else {
-		exp := client.ConfigSection{
-			client.ConfigElement{
-				"routing-key": "test",
-				"api-key":     true,
-				"enabled":     true,
-				"url":         victorops.DefaultVictorOpsAPIURL,
-				"global":      false,
-			},
+
+	validate := func(
+		t *testing.T,
+		cli *client.Client,
+		section,
+		element string,
+		expSection client.ConfigSection,
+		expElement client.ConfigElement,
+	) {
+		// Get all sections
+		if sections, err := cli.ConfigSections(); err != nil {
+			t.Fatal(err)
+		} else {
+			if got, exp := sections[section], expSection; !reflect.DeepEqual(got, exp) {
+				t.Errorf("unexpected config sections\ngot\n%#v\nexp\n%#v\n", got, exp)
+			}
 		}
-		if !reflect.DeepEqual(section, exp) {
-			t.Errorf("unexpected victorops config section\ngot\n%v\nexp\n%v\n", section, exp)
+		// Get the specific section
+		sectionLink := cli.ConfigSectionLink(section)
+		if section, err := cli.ConfigSection(sectionLink); err != nil {
+			t.Fatal(err)
+		} else {
+			if got, exp := section, expSection; !reflect.DeepEqual(got, exp) {
+				t.Errorf("unexpected config section\ngot\n%#v\nexp\n%#v\n", got, exp)
+			}
+		}
+		if element != "" {
+			elementLink := cli.ConfigElementLink(section, element)
+			// Get the specific element
+			if element, err := cli.ConfigElement(elementLink); err != nil {
+				t.Fatal(err)
+			} else {
+				if got, exp := element, expElement; !reflect.DeepEqual(got, exp) {
+					t.Errorf("unexpected config element\ngot\n%#v\nexp\n%#v\n", got, exp)
+				}
+			}
+		}
+	}
+
+	for _, tc := range testCases {
+		// Create default config
+		c := NewConfig()
+		if tc.setDefaults != nil {
+			tc.setDefaults(c)
+		}
+		s := OpenServer(c)
+		cli := Client(s)
+		defer s.Close()
+
+		validate(t, cli, tc.section, tc.element, tc.expDefaultSection, tc.expDefaultElement)
+
+		link := cli.ConfigSectionLink(tc.section)
+		if tc.element != "" {
+			link = cli.ConfigElementLink(tc.section, tc.element)
+		}
+		for _, ua := range tc.updates {
+			// Add an override
+			if err := cli.ConfigUpdate(link, ua.updateAction); err != nil {
+				t.Fatal(err)
+			}
+			validate(t, cli, tc.section, tc.element, ua.expSection, ua.expElement)
 		}
 	}
 }

@@ -68,6 +68,12 @@ func newOverrideKV(store storage.Interface) *overrideKV {
 	}
 }
 
+func init() {
+	// Register various interface types
+	gob.Register([]interface{}{})
+	gob.Register(map[string]interface{}{})
+}
+
 func (d *overrideKV) encodeOverride(t Override) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
