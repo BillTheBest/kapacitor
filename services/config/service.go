@@ -69,6 +69,8 @@ func (s *Service) Open() error {
 	} else {
 		s.elementKeys = elementKeys
 	}
+	log.Println(s.overrider)
+	log.Println(s.elementKeys)
 
 	// Define API routes
 	s.routes = []httpd.Route{
@@ -204,7 +206,8 @@ func (s *Service) handleUpdateSection(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	section, element := sectionAndElementFromPath(r.URL.Path)
-	config, err := s.getConfig()
+	log.Println("D! handleGetConfig", section, element)
+	config, err := s.getConfig(section)
 	if err != nil {
 		httpd.HttpError(w, fmt.Sprint("failed to resolve current config:", err), true, http.StatusInternalServerError)
 		return
@@ -213,9 +216,10 @@ func (s *Service) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(config)
 	} else {
+		log.Println("D! getting section", config)
 		sectionList, ok := config[section]
 		for k := range config {
-			log.Println(k)
+			log.Println("D!", section, k)
 		}
 		if !ok {
 			httpd.HttpError(w, fmt.Sprint("unknown section: ", section), true, http.StatusNotFound)
@@ -339,8 +343,9 @@ func convertOverrides(overrides []Override) []override.Override {
 }
 
 // getConfig returns a map of a fully resolved configuration object.
-func (s *Service) getConfig() (map[string][]map[string]interface{}, error) {
-	overrides, err := s.overrides.List("")
+func (s *Service) getConfig(section string) (map[string][]map[string]interface{}, error) {
+	overrides, err := s.overrides.List(section)
+	log.Println("D! overrides", overrides)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to retrieve config overrides")
 	}
@@ -349,8 +354,13 @@ func (s *Service) getConfig() (map[string][]map[string]interface{}, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to apply configuration overrides")
 	}
+	log.Println("D! sections", sections)
 	config := make(map[string][]map[string]interface{}, len(sections))
 	for name, sectionList := range sections {
+		if !strings.HasPrefix(name, section) {
+			// Skip sections we did not request
+			continue
+		}
 		for _, section := range sectionList {
 			redacted, err := section.Redacted()
 			if err != nil {
@@ -359,5 +369,6 @@ func (s *Service) getConfig() (map[string][]map[string]interface{}, error) {
 			config[name] = append(config[name], redacted)
 		}
 	}
+	log.Println("D! config", config)
 	return config, nil
 }

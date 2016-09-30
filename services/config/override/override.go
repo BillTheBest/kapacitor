@@ -280,10 +280,13 @@ func (w *overrideWalker) Struct(reflect.Value) error {
 }
 
 func (w *overrideWalker) StructField(f reflect.StructField, v reflect.Value) error {
+	name, _ := getSectionName(f)
+	log.Println("D! overrideWalker StructField", w.depth, name)
 	switch w.depth {
 	// Section level
 	case 0:
 		name, ok := getSectionName(f)
+		log.Println("D! overrideWalker getSectionName", name, ok)
 		if ok {
 			// Only override the section if a struct tag was present
 			w.currentSectionName = name
@@ -302,6 +305,7 @@ func (w *overrideWalker) StructField(f reflect.StructField, v reflect.Value) err
 		}
 
 		name := w.optionNameFunc(f)
+		log.Println("D! overrideWalker optionName", name)
 		setValue, ok := w.o.Options[name]
 		if ok {
 			if !w.o.Create && name == w.elementKey {
@@ -310,13 +314,16 @@ func (w *overrideWalker) StructField(f reflect.StructField, v reflect.Value) err
 			if err := weakCopyValue(reflect.ValueOf(setValue), v); err != nil {
 				return errors.Wrapf(err, "cannot set option %s", name)
 			}
+			log.Println("D! overrideWalker optionName used", name)
 			w.used[name] = true
 		}
+		log.Println("D! overrideWalker optionName done", name)
 	}
 	return nil
 }
 
 func (w *overrideWalker) Slice(v reflect.Value) error {
+	log.Println("D! overrideWalker Slice", w.depth, v)
 	w.currentSlice = v
 	if w.o.Section != w.currentSectionName {
 		return nil
@@ -372,8 +379,9 @@ func (w *overrideWalker) Slice(v reflect.Value) error {
 }
 
 func (w *overrideWalker) SliceElem(idx int, v reflect.Value) error {
-	w.currentElementName = ""
+	log.Println("D! overrideWalker SliceElem", idx, w.depth)
 	if w.depth == 1 && w.currentSectionName == w.o.Section && w.o.Element != "" {
+		w.currentElementName = ""
 		if w.elementKey != "" {
 			// Get current element name via field on current value
 			elementField := findFieldByElementKey(v, w.elementKey, w.optionNameFunc)
@@ -406,7 +414,16 @@ func (w *overrideWalker) SliceElem(idx int, v reflect.Value) error {
 }
 
 // weakCopyValue copies the value of dst into src, where numeric types are copied weakly.
-func weakCopyValue(src, dst reflect.Value) error {
+func weakCopyValue(src, dst reflect.Value) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if e, ok := r.(error); ok {
+				err = e
+			} else {
+				err = fmt.Errorf("%v", r)
+			}
+		}
+	}()
 	if !dst.CanSet() {
 		return errors.New("not settable")
 	}

@@ -26,7 +26,7 @@ type Config struct {
 	Default  bool     `toml:"default"`
 	URLs     []string `toml:"urls"`
 	Username string   `toml:"username"`
-	Password string   `toml:"password"`
+	Password string   `toml:"password" override:",redact"`
 	// Path to CA file
 	SSLCA string `toml:"ssl-ca"`
 	// Path to host cert file

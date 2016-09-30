@@ -68,9 +68,6 @@ type Config struct {
 
 	Hostname string `toml:"hostname"`
 	DataDir  string `toml:"data_dir"`
-
-	// The index of the default InfluxDB config
-	defaultInfluxDB int
 }
 
 // NewConfig returns an instance of Config with reasonable defaults.
@@ -173,15 +170,13 @@ func (c *Config) Validate() error {
 	if err != nil {
 		return err
 	}
-	c.defaultInfluxDB = -1
+	// Validate the set of InfluxDB configs.
+	// All names should be unique.
 	names := make(map[string]bool, len(c.InfluxDB))
-	for i := 0; i < len(c.InfluxDB); i++ {
-		config := c.InfluxDB[i]
-		if !config.Enabled {
-			c.InfluxDB = append(c.InfluxDB[0:i], c.InfluxDB[i+1:]...)
-			i--
-			continue
-		}
+	// Should be exactly one default if at least one configs is enabled.
+	defaultInfluxDB := -1
+	numEnabled := 0
+	for i, config := range c.InfluxDB {
 		if names[config.Name] {
 			return fmt.Errorf("duplicate name %q for influxdb configs", config.Name)
 		}
@@ -190,19 +185,28 @@ func (c *Config) Validate() error {
 		if err != nil {
 			return err
 		}
-		if config.Default {
-			if c.defaultInfluxDB != -1 {
-				return fmt.Errorf("More than one InfluxDB default was specified: %s %s", config.Name, c.InfluxDB[c.defaultInfluxDB].Name)
+		if config.Enabled && config.Default {
+			if defaultInfluxDB != -1 {
+				return fmt.Errorf("More than one InfluxDB default was specified: %s %s", config.Name, c.InfluxDB[defaultInfluxDB].Name)
 			}
-			c.defaultInfluxDB = i
+			defaultInfluxDB = i
+		}
+		if config.Enabled {
+			numEnabled++
 		}
 	}
 	// Set default if it is the only one
-	if len(c.InfluxDB) == 1 {
-		c.defaultInfluxDB = 0
+	if numEnabled == 1 {
+		for i, config := range c.InfluxDB {
+			if config.Enabled {
+				defaultInfluxDB = 0
+				c.InfluxDB[i].Default = true
+				break
+			}
+		}
 	}
-	if len(c.InfluxDB) > 0 && c.defaultInfluxDB == -1 {
-		return errors.New("at least one InfluxDB cluster must be marked as default.")
+	if numEnabled > 0 && defaultInfluxDB == -1 {
+		return errors.New("at least one of the enabled InfluxDB clusters must be marked as default.")
 	}
 	err = c.UDF.Validate()
 	if err != nil {
