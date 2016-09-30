@@ -174,7 +174,6 @@ func (s *Server) Stats() (stats, error) {
 // NewConfig returns the default config with temporary paths.
 func NewConfig() *server.Config {
 	c := server.NewConfig()
-	c.PostInit()
 	c.Reporting.Enabled = false
 	c.Replay.Dir = MustTempDir()
 	c.Storage.BoltDBPath = filepath.Join(MustTempDir(), "bolt.db")

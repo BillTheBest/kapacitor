@@ -29,8 +29,15 @@ type SectionD struct {
 	Option7 [][]int                   `toml:"toml-option7" json:"json-option7"`
 }
 
-func (d *SectionD) Default() {
+func (d *SectionD) SetDefaults() {
 	d.Option5 = "o5"
+}
+
+func (d SectionD) Validate() error {
+	if d.ID == "" {
+		return fmt.Errorf("ID cannot be empty")
+	}
+	return nil
 }
 
 type SectionIgnored struct {
