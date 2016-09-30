@@ -5,14 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"sync"
 
 	"github.com/influxdata/kapacitor"
 )
 
 type Service struct {
+	mu               sync.RWMutex
 	channel          string
 	url              string
 	global           bool
@@ -37,11 +40,32 @@ func (s *Service) Open() error {
 func (s *Service) Close() error {
 	return nil
 }
+func (s *Service) Update(newConfig []interface{}) error {
+	if l := len(newConfig); l != 1 {
+		return fmt.Errorf("expected only one new config object, got %d", l)
+	}
+	if c, ok := newConfig[0].(Config); !ok {
+		return fmt.Errorf("expected config object to be of type %T, got %T", c, newConfig[0])
+	} else {
+		s.mu.Lock()
+		s.channel = c.Channel
+		s.url = c.URL
+		s.global = c.Global
+		s.stateChangesOnly = c.StateChangesOnly
+		s.mu.Unlock()
+	}
+	return nil
+}
 
 func (s *Service) Global() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.global
 }
+
 func (s *Service) StateChangesOnly() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.stateChangesOnly
 }
 
@@ -53,6 +77,36 @@ type attachment struct {
 }
 
 func (s *Service) Alert(channel, message string, level kapacitor.AlertLevel) error {
+	url, post, err := s.preparePost(channel, message, level)
+	if err != nil {
+		return err
+	}
+	resp, err := http.Post(url, "application/json", post)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		type response struct {
+			Error string `json:"error"`
+		}
+		r := &response{Error: fmt.Sprintf("failed to understand Slack response. code: %d content: %s", resp.StatusCode, string(body))}
+		b := bytes.NewReader(body)
+		dec := json.NewDecoder(b)
+		dec.Decode(r)
+		return errors.New(r.Error)
+	}
+	return nil
+}
+
+func (s *Service) preparePost(channel, message string, level kapacitor.AlertLevel) (string, io.Reader, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	if channel == "" {
 		channel = s.channel
 	}
@@ -80,27 +134,8 @@ func (s *Service) Alert(channel, message string, level kapacitor.AlertLevel) err
 	enc := json.NewEncoder(&post)
 	err := enc.Encode(postData)
 	if err != nil {
-		return err
+		return "", nil, err
 	}
 
-	resp, err := http.Post(s.url, "application/json", &post)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return err
-		}
-		type response struct {
-			Error string `json:"error"`
-		}
-		r := &response{Error: fmt.Sprintf("failed to understand Slack response. code: %d content: %s", resp.StatusCode, string(body))}
-		b := bytes.NewReader(body)
-		dec := json.NewDecoder(b)
-		dec.Decode(r)
-		return errors.New(r.Error)
-	}
-	return nil
+	return s.url, &post, nil
 }

@@ -5,15 +5,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/influxdata/kapacitor"
 )
 
 type Service struct {
+	mu           sync.RWMutex
 	apikey       string
 	teams        []string
 	recipients   []string
@@ -43,11 +46,61 @@ func (s *Service) Close() error {
 	return nil
 }
 
+func (s *Service) Update(newConfig []interface{}) error {
+	if l := len(newConfig); l != 1 {
+		return fmt.Errorf("expected only one new config object, got %d", l)
+	}
+	if c, ok := newConfig[0].(Config); !ok {
+		return fmt.Errorf("expected config object to be of type %T, got %T", c, newConfig[0])
+	} else {
+		s.mu.Lock()
+		s.teams = c.Teams
+		s.recipients = c.Recipients
+		s.apikey = c.APIKey
+		s.url = c.URL + "/"
+		s.recovery_url = c.RecoveryURL + "/"
+		s.global = c.Global
+		s.mu.Unlock()
+	}
+	return nil
+}
+
 func (s *Service) Global() bool {
 	return s.global
 }
 
 func (s *Service) Alert(teams []string, recipients []string, messageType, message, entityID string, t time.Time, details interface{}) error {
+	url, post, err := s.preparePost(teams, recipients, messageType, message, entityID, t, details)
+	if err != nil {
+		return err
+	}
+
+	resp, err := http.Post(url, "application/json", post)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		type response struct {
+			Message string `json:"message"`
+		}
+		r := &response{Message: fmt.Sprintf("failed to understand OpsGenie response. code: %d content: %s", resp.StatusCode, string(body))}
+		b := bytes.NewReader(body)
+		dec := json.NewDecoder(b)
+		dec.Decode(r)
+		return errors.New(r.Message)
+	}
+	return nil
+}
+
+func (s *Service) preparePost(teams []string, recipients []string, messageType, message, entityID string, t time.Time, details interface{}) (string, io.Reader, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	ogData := make(map[string]interface{})
 	url := s.url
 
@@ -74,7 +127,7 @@ func (s *Service) Alert(teams []string, recipients []string, messageType, messag
 	if details != nil {
 		b, err := json.Marshal(details)
 		if err != nil {
-			return err
+			return "", nil, err
 		}
 		ogData["description"] = string(b)
 	}
@@ -100,27 +153,8 @@ func (s *Service) Alert(teams []string, recipients []string, messageType, messag
 	enc := json.NewEncoder(&post)
 	err := enc.Encode(ogData)
 	if err != nil {
-		return err
+		return "", nil, err
 	}
 
-	resp, err := http.Post(url, "application/json", &post)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return err
-		}
-		type response struct {
-			Message string `json:"message"`
-		}
-		r := &response{Message: fmt.Sprintf("failed to understand OpsGenie response. code: %d content: %s", resp.StatusCode, string(body))}
-		b := bytes.NewReader(body)
-		dec := json.NewDecoder(b)
-		dec.Decode(r)
-		return errors.New(r.Message)
-	}
-	return nil
+	return url, &post, nil
 }

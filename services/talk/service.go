@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"sync"
 )
 
 type Service struct {
+	mu         sync.RWMutex
 	url        string
 	authorName string
 	logger     *log.Logger
@@ -32,20 +35,27 @@ func (s *Service) Close() error {
 	return nil
 }
 
-func (s *Service) Alert(title, text string) error {
-	postData := make(map[string]interface{})
-	postData["title"] = title
-	postData["text"] = text
-	postData["authorName"] = s.authorName
+func (s *Service) Update(newConfig []interface{}) error {
+	if l := len(newConfig); l != 1 {
+		return fmt.Errorf("expected only one new config object, got %d", l)
+	}
+	if c, ok := newConfig[0].(Config); !ok {
+		return fmt.Errorf("expected config object to be of type %T, got %T", c, newConfig[0])
+	} else {
+		s.mu.Lock()
+		s.url = c.URL
+		s.authorName = c.AuthorName
+		s.mu.Unlock()
+	}
+	return nil
+}
 
-	var post bytes.Buffer
-	enc := json.NewEncoder(&post)
-	err := enc.Encode(postData)
+func (s *Service) Alert(title, text string) error {
+	url, post, err := s.preparePost(title, text)
 	if err != nil {
 		return err
 	}
-
-	resp, err := http.Post(s.url, "application/json", &post)
+	resp, err := http.Post(url, "application/json", post)
 	if err != nil {
 		return err
 	}
@@ -64,4 +74,23 @@ func (s *Service) Alert(title, text string) error {
 		return errors.New(r.Error)
 	}
 	return nil
+}
+
+func (s *Service) preparePost(title, text string) (string, io.Reader, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	postData := make(map[string]interface{})
+	postData["title"] = title
+	postData["text"] = text
+	postData["authorName"] = s.authorName
+
+	var post bytes.Buffer
+	enc := json.NewEncoder(&post)
+	err := enc.Encode(postData)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return s.url, &post, nil
 }

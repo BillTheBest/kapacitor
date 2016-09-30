@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -62,35 +63,12 @@ func (s *Service) Global() bool {
 }
 
 func (s *Service) Alert(routingKey, messageType, message, entityID string, t time.Time, details interface{}) error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	voData := make(map[string]interface{})
-	voData["message_type"] = messageType
-	voData["entity_id"] = entityID
-	voData["state_message"] = message
-	voData["timestamp"] = t.Unix()
-	voData["monitoring_tool"] = kapacitor.Product
-	if details != nil {
-		b, err := json.Marshal(details)
-		if err != nil {
-			return err
-		}
-		voData["data"] = string(b)
-	}
-
-	if routingKey == "" {
-		routingKey = s.routingKey
-	}
-
-	// Post data to VO
-	var post bytes.Buffer
-	enc := json.NewEncoder(&post)
-	err := enc.Encode(voData)
+	url, post, err := s.preparePost(routingKey, messageType, message, entityID, t, details)
 	if err != nil {
 		return err
 	}
 
-	resp, err := http.Post(s.url+routingKey, "application/json", &post)
+	resp, err := http.Post(url, "application/json", post)
 	if err != nil {
 		return err
 	}
@@ -113,4 +91,35 @@ func (s *Service) Alert(routingKey, messageType, message, entityID string, t tim
 		return errors.New(r.Message)
 	}
 	return nil
+}
+
+func (s *Service) preparePost(routingKey, messageType, message, entityID string, t time.Time, details interface{}) (string, io.Reader, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	voData := make(map[string]interface{})
+	voData["message_type"] = messageType
+	voData["entity_id"] = entityID
+	voData["state_message"] = message
+	voData["timestamp"] = t.Unix()
+	voData["monitoring_tool"] = kapacitor.Product
+	if details != nil {
+		b, err := json.Marshal(details)
+		if err != nil {
+			return "", nil, err
+		}
+		voData["data"] = string(b)
+	}
+
+	if routingKey == "" {
+		routingKey = s.routingKey
+	}
+
+	// Post data to VO
+	var post bytes.Buffer
+	enc := json.NewEncoder(&post)
+	err := enc.Encode(voData)
+	if err != nil {
+		return "", nil, err
+	}
+	return s.url + routingKey, &post, nil
 }

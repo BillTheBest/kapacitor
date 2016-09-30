@@ -60,7 +60,6 @@ func (c *Config) SetDefaults() {
 	c.Enabled = true
 	c.Name = "default"
 	c.URLs = []string{"http://localhost:8086"}
-	c.Subscriptions = make(map[string][]string)
 	c.ExcludedSubscriptions = map[string][]string{
 		stats.DefaultDatabse: []string{stats.DefaultRetentionPolicy},
 	}
@@ -95,7 +94,7 @@ func (c Config) Validate() error {
 	switch c.SubscriptionProtocol {
 	case "http", "https", "udp":
 	default:
-		return fmt.Errorf("invalid subscription protocol, must be one of 'udp', 'http' or 'https', got %s", c.SubscriptionProtocol)
+		return fmt.Errorf("invalid subscription protocol, must be one of 'udp', 'http' or 'https', got %q: %v", c.SubscriptionProtocol, c)
 	}
 	return nil
 }

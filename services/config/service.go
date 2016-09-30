@@ -69,8 +69,6 @@ func (s *Service) Open() error {
 	} else {
 		s.elementKeys = elementKeys
 	}
-	log.Println(s.overrider)
-	log.Println(s.elementKeys)
 
 	// Define API routes
 	s.routes = []httpd.Route{
