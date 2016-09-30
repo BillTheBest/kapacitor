@@ -1,5 +1,11 @@
 package victorops
 
+import (
+	"net/url"
+
+	"github.com/pkg/errors"
+)
+
 const DefaultVictorOpsAPIURL = "https://alert.victorops.com/integrations/generic/20131114/alert"
 
 type Config struct {
@@ -19,4 +25,14 @@ func NewConfig() Config {
 	return Config{
 		URL: DefaultVictorOpsAPIURL,
 	}
+}
+
+func (c Config) Validate() error {
+	if c.URL == "" {
+		return errors.New("url cannot be empty")
+	}
+	if _, err := url.Parse(c.URL); err != nil {
+		return errors.Wrapf(err, "invalid URL %q", c.URL)
+	}
+	return nil
 }

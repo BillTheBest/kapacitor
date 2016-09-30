@@ -41,6 +41,7 @@
 package override
 
 import (
+	"encoding"
 	"fmt"
 	"log"
 	"reflect"
@@ -320,6 +321,7 @@ func (w *overrideWalker) StructField(f reflect.StructField, v reflect.Value) err
 			if !w.o.Create && name == w.elementKey {
 				return fmt.Errorf("cannot override element key %s", name)
 			}
+			log.Println("D! copy option", name)
 			if err := weakCopyValue(reflect.ValueOf(setValue), v); err != nil {
 				return errors.Wrapf(err, "cannot set option %s", name)
 			}
@@ -435,9 +437,13 @@ func (w *overrideWalker) SliceElem(idx int, v reflect.Value) error {
 	return nil
 }
 
+var textUnmarshalerType = reflect.TypeOf((*encoding.TextUnmarshaler)(nil)).Elem()
+
 // weakCopyValue copies the value of dst into src, where numeric and interface types are copied weakly.
 func weakCopyValue(src, dst reflect.Value) (err error) {
 	defer func() {
+		// This shouldn't be necessary but it better to catch a panic here,
+		// where we can provide context instead of crashing the server or letting it bouble up.
 		if r := recover(); r != nil {
 			if e, ok := r.(error); ok {
 				err = e
@@ -454,11 +460,23 @@ func weakCopyValue(src, dst reflect.Value) (err error) {
 	}
 	srcK := src.Kind()
 	dstK := dst.Kind()
+
+	// Get addressable value since it may implement
+	// the TextUnmarshaler interface
+	var addrDst reflect.Value
+	if d := reflect.Indirect(dst); d.CanAddr() {
+		addrDst = d.Addr()
+	}
+
+	if dstK == reflect.Int64 {
+		log.Println("D! weakCopyValue", dst, dst.Type())
+	}
 	if srcK == dstK {
 		if dst.Type() == src.Type() {
 			// Perform normal copy
 			dst.Set(src)
 		} else {
+			// Perform recursive copy into elements
 			switch dstK {
 			case reflect.Map:
 				if dst.IsNil() {
@@ -486,6 +504,17 @@ func weakCopyValue(src, dst reflect.Value) (err error) {
 				return fmt.Errorf("cannot copy mismatched types got %s exp %s", src.Type().String(), dst.Type().String())
 			}
 		}
+	} else if addrDst.Type().Implements(textUnmarshalerType) {
+		um := addrDst.Interface().(encoding.TextUnmarshaler)
+		var text []byte
+		if src.Type().Implements(stringerType) || srcK == reflect.String {
+			text = []byte(src.String())
+		} else {
+			return fmt.Errorf("cannot unmarshal %s into %s", srcK, dstK)
+		}
+		if err := um.UnmarshalText(text); err != nil {
+			errors.Wrap(err, "failed to unmarshal text")
+		}
 	} else if isNumericKind(dstK) {
 		// Perform weak numeric copy
 		if isNumericKind(srcK) {
@@ -502,18 +531,20 @@ func weakCopyValue(src, dst reflect.Value) (err error) {
 			case isIntKind(dstK):
 				if i, err := strconv.ParseInt(str, 10, 64); err == nil {
 					dst.SetInt(i)
+					return nil
 				}
 			case isUintKind(dstK):
 				if i, err := strconv.ParseUint(str, 10, 64); err == nil {
 					dst.SetUint(i)
+					return nil
 				}
 			case isFloatKind(dstK):
 				if f, err := strconv.ParseFloat(str, 64); err == nil {
 					dst.SetFloat(f)
+					return nil
 				}
-			default:
-				return fmt.Errorf("cannot convert string into %s", dstK)
 			}
+			return fmt.Errorf("cannot convert string %q into %s", str, dstK)
 		}
 	} else {
 		return fmt.Errorf("wrong kind %s, expected value of kind %s: %t", srcK, dstK, srcK == dstK)
