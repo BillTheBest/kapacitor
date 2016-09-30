@@ -4766,9 +4766,7 @@ func TestServer_UpdateConfig(t *testing.T) {
 				{
 					updateAction: client.ConfigUpdateAction{
 						Add: map[string]interface{}{
-							"name":    "new",
-							"enabled": true,
-							"urls":    []string{"http://new.example.com:8086"},
+							"name": "new",
 						},
 					},
 					expSection: client.ConfigSection{
@@ -4797,9 +4795,9 @@ func TestServer_UpdateConfig(t *testing.T) {
 							"username":                    "bob",
 						},
 						client.ConfigElement{
-							"default":                     true,
+							"default":                     false,
 							"disable-subscriptions":       false,
-							"enabled":                     false,
+							"enabled":                     true,
 							"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
 							"http-port":                   float64(0),
 							"insecure-skip-verify":        false,
@@ -4823,9 +4821,9 @@ func TestServer_UpdateConfig(t *testing.T) {
 					},
 					element: "new",
 					expElement: client.ConfigElement{
-						"default":                     true,
+						"default":                     false,
 						"disable-subscriptions":       false,
-						"enabled":                     false,
+						"enabled":                     true,
 						"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
 						"http-port":                   float64(0),
 						"insecure-skip-verify":        false,

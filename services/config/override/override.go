@@ -109,6 +109,13 @@ func New(config interface{}) *Overrider {
 	}
 }
 
+// Validater is a type that can validate itself
+// If a type is a Validater, then Validate() is called
+// whenever it is modified.
+type Validater interface {
+	Validate() error
+}
+
 // Override a section with values from the set of overrides.
 // The overrides is a map of option name to value.
 //
@@ -150,6 +157,12 @@ func (c *Overrider) applyOverride(object interface{}, o Override) (Section, erro
 	section := walker.sectionObject()
 	if section.value == nil && !o.Delete {
 		return Section{}, fmt.Errorf("unknown section %s", o.Section)
+	}
+	// Validate new value
+	if v, ok := section.value.(Validater); ok {
+		if err := v.Validate(); err != nil {
+			return Section{}, errors.Wrap(err, "failed validation")
+		}
 	}
 	return section, nil
 }
@@ -320,7 +333,7 @@ func (w *overrideWalker) StructField(f reflect.StructField, v reflect.Value) err
 // If a type is a Defaulter and a new value needs to be created of that type,
 // then Default() is called on a new instance of that type.
 type Defaulter interface {
-	Default()
+	SetDefaults()
 }
 
 var defaulterType = reflect.TypeOf((*Defaulter)(nil)).Elem()
@@ -345,7 +358,7 @@ func (w *overrideWalker) Slice(v reflect.Value) error {
 		}
 		// If the type is a defaulter, call Default
 		if n.Type().Implements(defaulterType) {
-			n.Interface().(Defaulter).Default()
+			n.Interface().(Defaulter).SetDefaults()
 		}
 		// Indirect the value if we didn't want a pointer
 		if et.Kind() != reflect.Ptr {

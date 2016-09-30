@@ -80,6 +80,7 @@ func NewConfig() *Config {
 	c.Storage = storage.NewConfig()
 	c.Replay = replay.NewConfig()
 	c.Task = task_store.NewConfig()
+	c.InfluxDB = []influxdb.Config{influxdb.NewConfig()}
 	c.Logging = logging.NewConfig()
 
 	c.Collectd = collectd.NewConfig()
@@ -106,26 +107,25 @@ func NewConfig() *Config {
 // to initialize ARRAY attributes.
 // All ARRAY attributes have to be init after toml decode
 // See: https://github.com/BurntSushi/toml/pull/68
-func (c *Config) PostInit() {
-	if len(c.InfluxDB) == 0 {
-		i := influxdb.NewConfig()
-		c.InfluxDB = []influxdb.Config{i}
-		c.InfluxDB[0].Name = "default"
-		c.InfluxDB[0].URLs = []string{"http://localhost:8086"}
-	} else if len(c.InfluxDB) == 1 && c.InfluxDB[0].Name == "" {
-		c.InfluxDB[0].Name = "default"
-	}
-	// Set default Values
-	for i, influx := range c.InfluxDB {
-		influx.SetDefaultValues()
-		c.InfluxDB[i] = influx
-	}
-}
+//func (c *Config) PostInit() {
+//	if len(c.InfluxDB) == 0 {
+//		i := influxdb.NewConfig()
+//		c.InfluxDB = []influxdb.Config{i}
+//		c.InfluxDB[0].Name = "default"
+//		c.InfluxDB[0].URLs = []string{"http://localhost:8086"}
+//	} else if len(c.InfluxDB) == 1 && c.InfluxDB[0].Name == "" {
+//		c.InfluxDB[0].Name = "default"
+//	}
+//	// Set default Values
+//	for i, influx := range c.InfluxDB {
+//		influx.SetDefaultValues()
+//		c.InfluxDB[i] = influx
+//	}
+//}
 
 // NewDemoConfig returns the config that runs when no config is specified.
 func NewDemoConfig() (*Config, error) {
 	c := NewConfig()
-	c.PostInit()
 
 	var homeDir string
 	// By default, store meta and data files in current users home directory
