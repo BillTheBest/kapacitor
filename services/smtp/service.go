@@ -30,22 +30,24 @@ func NewService(c Config, l *log.Logger) *Service {
 }
 
 func (s *Service) Open() error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.logger.Println("I! Starting SMTP service")
+
 	if !s.c.Enabled {
 		return nil
 	}
 
-	s.logger.Println("I! Starting SMTP service")
-	if s.c.From == "" {
-		return errors.New("cannot open smtp service: missing from address in configuration")
-	}
 	s.wg.Add(1)
 	go s.runMailer()
 	return nil
 }
 
 func (s *Service) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	s.logger.Println("I! Closing SMTP service")
 	close(s.mail)
 	s.wg.Wait()
@@ -65,6 +67,9 @@ func (s *Service) Update(newConfig []interface{}) error {
 		s.c = c
 		s.mu.Unlock()
 		if nowEnabled {
+			if c.From == "" {
+				return errors.New("cannot open smtp service: missing from address in configuration")
+			}
 			s.wg.Add(1)
 			go s.runMailer()
 		}
@@ -116,10 +121,13 @@ func (s *Service) runMailer() {
 			if !ok {
 				return
 			}
+			// Check for special nil message to update dialer
 			if m == nil {
-				//Close old connection
-				if err := conn.Close(); err != nil {
-					s.logger.Println("E! error closing connection to old SMTP server:", err)
+				// Close old connection
+				if conn != nil {
+					if err := conn.Close(); err != nil {
+						s.logger.Println("E! error closing connection to old SMTP server:", err)
+					}
 				}
 				// Create new dialer
 				d = s.dialer()
@@ -128,14 +136,17 @@ func (s *Service) runMailer() {
 				s.mu.RLock()
 				idleTimeout = time.Duration(s.c.IdleTimeout)
 				s.mu.RUnlock()
+				// Nothing more to do with nil message
+				break
 			}
 			if !open {
 				if conn, err = d.Dial(); err != nil {
 					s.logger.Println("E! error connecting to SMTP server", err)
-					continue
+					break
 				}
 				open = true
 			}
+			log.Println("D! conn", conn, open)
 			if err := gomail.Send(conn, m); err != nil {
 				s.logger.Println("E!", err)
 			}
