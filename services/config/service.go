@@ -362,3 +362,22 @@ func (s *Service) getConfig(section string) (map[string][]map[string]interface{}
 	}
 	return config, nil
 }
+
+func (s *Service) Config() (map[string][]interface{}, error) {
+	overrides, err := s.overrides.List("")
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to retrieve config overrides")
+	}
+	os := convertOverrides(overrides)
+	sections, err := s.overrider.OverrideAll(os)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to apply configuration overrides")
+	}
+	config := make(map[string][]interface{}, len(sections))
+	for name, sectionList := range sections {
+		for _, section := range sectionList {
+			config[name] = append(config[name], section.Value())
+		}
+	}
+	return config, nil
+}

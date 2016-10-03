@@ -79,6 +79,10 @@ func TestService_Open_LinkSubscriptions(t *testing.T) {
 		NoPassword    bool
 		WrongCluster  bool
 	}
+	type partialConfig struct {
+		configSubs   map[string][]string
+		configExSubs map[string][]string
+	}
 	testCases := map[string]struct {
 		useTokens bool
 
@@ -90,6 +94,9 @@ func TestService_Open_LinkSubscriptions(t *testing.T) {
 		grantedTokens []tokenGrant
 		revokedTokens []string
 		subChanged    subChanged
+
+		// apply new config between rounds
+		partialConfigs map[string]partialConfig
 
 		// Second round
 		secondClusters      map[string]clusterInfo
@@ -742,16 +749,92 @@ func TestService_Open_LinkSubscriptions(t *testing.T) {
 				rp:    "rpA",
 			}},
 		},
+		"ConfigChange_NewSubs": {
+			clusters: map[string]clusterInfo{
+				testClusterName: {
+					dbrps: map[string][]string{
+						"db1": []string{"rpA", "rpB"},
+						"db2": []string{"rpC", "rpD"},
+					},
+					subs: map[string][]string{
+						"db1": []string{"rpA", "rpB"},
+						"db2": []string{"rpC", "rpD"},
+					},
+				},
+			},
+			secondClusters: map[string]clusterInfo{
+				testClusterName: {
+					dbrps: map[string][]string{
+						"db1": []string{"rpA", "rpB"},
+						"db2": []string{"rpC", "rpD"},
+					},
+					subs: map[string][]string{
+						"db1": []string{"rpA", "rpB"},
+						"db2": []string{"rpC", "rpD"},
+					},
+				},
+			},
+			partialConfigs: map[string]partialConfig{
+				testClusterName: {
+					configSubs: map[string][]string{
+						"db1": {"rpA"},
+					},
+				},
+			},
+			secondDropSubs: []string{
+				`DROP SUBSCRIPTION "` + testSubName + `" ON db1.rpB`,
+				`DROP SUBSCRIPTION "` + testSubName + `" ON db2.rpC`,
+				`DROP SUBSCRIPTION "` + testSubName + `" ON db2.rpD`,
+			},
+		},
+		"ConfigChange_NewExcludes": {
+			clusters: map[string]clusterInfo{
+				testClusterName: {
+					dbrps: map[string][]string{
+						"db1": []string{"rpA", "rpB"},
+						"db2": []string{"rpC", "rpD"},
+					},
+					subs: map[string][]string{
+						"db1": []string{"rpA", "rpB"},
+						"db2": []string{"rpC", "rpD"},
+					},
+				}},
+			secondClusters: map[string]clusterInfo{
+				testClusterName: {
+					dbrps: map[string][]string{
+						"db1": []string{"rpA", "rpB"},
+						"db2": []string{"rpC", "rpD"},
+					},
+					subs: map[string][]string{
+						"db1": []string{"rpA", "rpB"},
+						"db2": []string{"rpC", "rpD"},
+					},
+				}},
+			partialConfigs: map[string]partialConfig{
+				testClusterName: {
+					configExSubs: map[string][]string{
+						"db1": {"rpA"},
+					},
+				},
+			},
+			secondDropSubs: []string{
+				`DROP SUBSCRIPTION "` + testSubName + `" ON db1.rpA`,
+			},
+		},
 	}
 	for testName, tc := range testCases {
 		t.Log("starting test:", testName)
 		log.Println("starting test:", testName)
 		clusterNames := make([]string, 0, len(tc.clusters))
+		clusterNameLookup := make(map[string]int, len(tc.clusters))
+		i := 0
 		for clusterName := range tc.clusters {
 			clusterNames = append(clusterNames, clusterName)
+			clusterNameLookup[clusterName] = i
+			i++
 		}
-		c := NewDefaultTestConfigs(clusterNames)
-		s, as, cs := NewTestService(c, "localhost", tc.useTokens)
+		defaultConfigs := NewDefaultTestConfigs(clusterNames)
+		s, as, cs := NewTestService(defaultConfigs, "localhost", tc.useTokens)
 
 		// Define the active vars
 		var activeClusters map[string]clusterInfo
@@ -900,13 +983,15 @@ func TestService_Open_LinkSubscriptions(t *testing.T) {
 		dropSubs = make(map[string]bool)
 		grantedTokens = make(map[tokenGrant]bool)
 		revokedTokens = make(map[string]bool)
+
+		log.Println("D! first round")
 		if err := s.Open(); err != nil {
 			t.Fatal(err)
 		}
 		defer s.Close()
 		validate(
 			t,
-			testName,
+			testName+"-1",
 			tc.createSubs,
 			tc.dropSubs,
 			tc.grantedTokens,
@@ -926,11 +1011,24 @@ func TestService_Open_LinkSubscriptions(t *testing.T) {
 		grantedTokens = make(map[tokenGrant]bool)
 		revokedTokens = make(map[string]bool)
 
+		log.Println("D! second round")
+		if len(tc.partialConfigs) > 0 {
+			configs := make([]interface{}, 0, len(tc.partialConfigs))
+			for name, pc := range tc.partialConfigs {
+				c := defaultConfigs[clusterNameLookup[name]]
+				c.Subscriptions = pc.configSubs
+				c.ExcludedSubscriptions = pc.configExSubs
+				configs = append(configs, c)
+			}
+			if err := s.Update(configs); err != nil {
+				t.Fatal(err)
+			}
+		}
 		s.LinkSubscriptions()
 
 		validate(
 			t,
-			testName,
+			testName+"-2",
 			tc.secondCreateSubs,
 			tc.secondDropSubs,
 			tc.secondGrantedTokens,
