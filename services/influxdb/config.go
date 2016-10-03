@@ -69,6 +69,21 @@ func (c *Config) SetDefaults() {
 	c.SubscriptionSyncInterval = toml.Duration(DefaultSubscriptionSyncInterval)
 }
 
+func (c *Config) ApplyConditionalDefaults() {
+	if c.UDPBuffer == 0 {
+		c.UDPBuffer = udp.DefaultBuffer
+	}
+	if c.StartUpTimeout == 0 {
+		c.StartUpTimeout = toml.Duration(DefaultStartUpTimeout)
+	}
+	if c.SubscriptionProtocol == "" {
+		c.SubscriptionProtocol = DefaultSubscriptionProtocol
+	}
+	if c.SubscriptionSyncInterval == toml.Duration(0) {
+		c.SubscriptionSyncInterval = toml.Duration(DefaultSubscriptionSyncInterval)
+	}
+}
+
 var validNamePattern = regexp.MustCompile(`^[-\._\p{L}0-9]+$`)
 
 func (c Config) Validate() error {

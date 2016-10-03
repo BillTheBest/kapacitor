@@ -48,6 +48,9 @@ func (c Config) Validate() error {
 	if c.IdleTimeout < 0 {
 		return errors.New("idle timeout must be positive")
 	}
+	if c.Enabled && c.From == "" {
+		return errors.New("must provide a 'from' address")
+	}
 	// Poor mans email validation, but since emails have a very large domain this is probably good enough
 	// to catch user error.
 	if c.From != "" && !strings.ContainsRune(c.From, '@') {
