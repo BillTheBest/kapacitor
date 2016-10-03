@@ -412,16 +412,7 @@ func (s *influxdbCluster) Open() error {
 		return nil
 	}
 	s.closed = false
-	if !s.disableSubs {
-		if s.subscriptionSyncInterval != 0 {
-			s.subSyncTicker = time.NewTicker(s.subscriptionSyncInterval)
-			go func() {
-				for _ = range s.subSyncTicker.C {
-					s.LinkSubscriptions()
-				}
-			}()
-		}
-	}
+	s.watchSubs()
 	return s.linkSubscriptions()
 }
 
@@ -437,6 +428,10 @@ func (s *influxdbCluster) Close() error {
 		s.subSyncTicker.Stop()
 	}
 
+	return s.closeServices()
+}
+
+func (s *influxdbCluster) closeServices() error {
 	var lastErr error
 	for _, service := range s.services {
 		err := service.Close()
@@ -459,11 +454,67 @@ func (s *influxdbCluster) Update(c Config) error {
 	if c.KapacitorHostname != "" {
 		s.hostname = c.KapacitorHostname
 	}
+
+	unlinked := false
+	resetSubs := func() {
+		// unlink and close everything and let it get re-linked.
+		if !unlinked {
+			s.closeServices()
+			s.unlinkSubscriptions()
+			unlinked = true
+		}
+	}
+
+	if s.udpBind != c.UDPBind {
+		s.udpBind = c.UDPBind
+		// UDP bind changed,
+		resetSubs()
+	}
+	if s.udpBuffer != c.UDPBuffer {
+		s.udpBuffer = c.UDPBuffer
+		// UDP buffer changed, unlink everything and let it get re-linked with new bind.
+		resetSubs()
+	}
+	if s.udpReadBuffer != c.UDPReadBuffer {
+		s.udpReadBuffer = c.UDPReadBuffer
+		// UDP read buffer changed, unlink everything and let it get re-linked with new bind.
+		resetSubs()
+	}
+	s.startupTimeout = time.Duration(c.StartUpTimeout)
+	if i := time.Duration(c.SubscriptionSyncInterval); s.subscriptionSyncInterval != i {
+		s.subscriptionSyncInterval = i
+		s.watchSubs()
+	}
+	if s.disableSubs != c.DisableSubscriptions && c.DisableSubscriptions {
+		// Subscriptions have been disabled, unlink.
+		s.unlinkSubscriptions()
+	}
+	s.disableSubs = c.DisableSubscriptions
+	s.protocol = c.SubscriptionProtocol
 	s.configs = urlsFromConfig(c)
 	s.configSubs = subsFromConfig(s.subName, c.Subscriptions)
 	s.exConfigSubs = subsFromConfig(s.subName, c.ExcludedSubscriptions)
 	return s.linkSubscriptions()
 
+}
+
+// watchSubs setups the goroutine to watch the subscriptions and continuously link them.
+// The caller must have the lock.
+func (s *influxdbCluster) watchSubs() {
+	if s.subSyncTicker != nil {
+		s.subSyncTicker.Stop()
+	}
+	if !s.disableSubs {
+		return
+	}
+	if s.subscriptionSyncInterval != 0 {
+		s.subSyncTicker = time.NewTicker(s.subscriptionSyncInterval)
+		go func() {
+			for _ = range s.subSyncTicker.C {
+				s.LinkSubscriptions()
+			}
+		}()
+	}
 }
 
 func (s *influxdbCluster) Addr() string {

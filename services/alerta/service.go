@@ -15,6 +15,7 @@ import (
 
 type Service struct {
 	mu          sync.RWMutex
+	enabled     bool
 	url         string
 	token       string
 	environment string
@@ -24,6 +25,7 @@ type Service struct {
 
 func NewService(c Config, l *log.Logger) *Service {
 	return &Service{
+		enabled:     c.Enabled,
 		url:         c.URL,
 		token:       c.Token,
 		environment: c.Environment,
@@ -90,6 +92,9 @@ func (s *Service) preparePost(token, resource, event, environment, severity, gro
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if token == "" {
+		if !s.enabled {
+			return "", nil, errors.New("service is not enabled")
+		}
 		token = s.token
 	}
 

@@ -14,6 +14,7 @@ import (
 
 type Service struct {
 	mu         sync.RWMutex
+	enabled    bool
 	url        string
 	authorName string
 	logger     *log.Logger
@@ -21,6 +22,7 @@ type Service struct {
 
 func NewService(c Config, l *log.Logger) *Service {
 	return &Service{
+		enabled:    c.Enabled,
 		url:        c.URL,
 		authorName: c.AuthorName,
 		logger:     l,
@@ -80,6 +82,9 @@ func (s *Service) preparePost(title, text string) (string, io.Reader, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	if !s.enabled {
+		return "", nil, errors.New("service is not enabled")
+	}
 	postData := make(map[string]interface{})
 	postData["title"] = title
 	postData["text"] = text

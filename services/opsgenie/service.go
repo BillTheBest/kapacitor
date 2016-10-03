@@ -17,6 +17,7 @@ import (
 
 type Service struct {
 	mu           sync.RWMutex
+	enabled      bool
 	apikey       string
 	teams        []string
 	recipients   []string
@@ -28,6 +29,7 @@ type Service struct {
 
 func NewService(c Config, l *log.Logger) *Service {
 	return &Service{
+		enabled:      c.Enabled,
 		teams:        c.Teams,
 		recipients:   c.Recipients,
 		apikey:       c.APIKey,
@@ -100,6 +102,9 @@ func (s *Service) Alert(teams []string, recipients []string, messageType, messag
 func (s *Service) preparePost(teams []string, recipients []string, messageType, message, entityID string, t time.Time, details interface{}) (string, io.Reader, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	if !s.enabled {
+		return "", nil, errors.New("service not enabled")
+	}
 
 	ogData := make(map[string]interface{})
 	url := s.url

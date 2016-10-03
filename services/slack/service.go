@@ -16,6 +16,7 @@ import (
 
 type Service struct {
 	mu               sync.RWMutex
+	enabled          bool
 	channel          string
 	url              string
 	global           bool
@@ -25,6 +26,7 @@ type Service struct {
 
 func NewService(c Config, l *log.Logger) *Service {
 	return &Service{
+		enabled:          c.Enabled,
 		channel:          c.Channel,
 		url:              c.URL,
 		global:           c.Global,
@@ -107,6 +109,9 @@ func (s *Service) preparePost(channel, message string, level kapacitor.AlertLeve
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	if !s.enabled {
+		return "", nil, errors.New("service is not enabled")
+	}
 	if channel == "" {
 		channel = s.channel
 	}

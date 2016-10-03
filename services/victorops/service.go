@@ -17,6 +17,7 @@ import (
 
 type Service struct {
 	mu         sync.RWMutex
+	enabled    bool
 	routingKey string
 	url        string
 	global     bool
@@ -25,6 +26,7 @@ type Service struct {
 
 func NewService(c Config, l *log.Logger) *Service {
 	return &Service{
+		enabled:    c.Enabled,
 		routingKey: c.RoutingKey,
 		url:        c.URL + "/" + c.APIKey + "/",
 		global:     c.Global,
@@ -96,6 +98,10 @@ func (s *Service) Alert(routingKey, messageType, message, entityID string, t tim
 func (s *Service) preparePost(routingKey, messageType, message, entityID string, t time.Time, details interface{}) (string, io.Reader, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	if !s.enabled {
+		return "", nil, errors.New("service is not enabled")
+	}
+
 	voData := make(map[string]interface{})
 	voData["message_type"] = messageType
 	voData["entity_id"] = entityID

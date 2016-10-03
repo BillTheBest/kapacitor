@@ -32,6 +32,9 @@ func NewService(c Config, l *log.Logger) *Service {
 func (s *Service) Open() error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	if !s.c.Enabled {
+		return nil
+	}
 
 	s.logger.Println("I! Starting SMTP service")
 	if s.c.From == "" {
@@ -48,6 +51,7 @@ func (s *Service) Close() error {
 	s.wg.Wait()
 	return nil
 }
+
 func (s *Service) Update(newConfig []interface{}) error {
 	if l := len(newConfig); l != 1 {
 		return fmt.Errorf("expected only one new config object, got %d", l)
@@ -55,9 +59,15 @@ func (s *Service) Update(newConfig []interface{}) error {
 	if c, ok := newConfig[0].(Config); !ok {
 		return fmt.Errorf("expected config object to be of type %T, got %T", c, newConfig[0])
 	} else {
+		nowEnabled := false
 		s.mu.Lock()
+		nowEnabled = !s.c.Enabled && c.Enabled
 		s.c = c
 		s.mu.Unlock()
+		if nowEnabled {
+			s.wg.Add(1)
+			go s.runMailer()
+		}
 		// Signal to create new dialer
 		s.mail <- nil
 	}
@@ -155,6 +165,9 @@ func (s *Service) SendMail(to []string, subject, body string) error {
 func (s *Service) prepareMessge(to []string, subject, body string) (*gomail.Message, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	if !s.c.Enabled {
+		return nil, errors.New("service not enabled")
+	}
 	if len(to) == 0 {
 		to = s.c.To
 	}

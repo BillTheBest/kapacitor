@@ -16,6 +16,7 @@ import (
 
 type Service struct {
 	mu           sync.RWMutex
+	enabled      bool
 	HTTPDService interface {
 		URL() string
 	}
@@ -27,6 +28,7 @@ type Service struct {
 
 func NewService(c Config, l *log.Logger) *Service {
 	return &Service{
+		enabled:    c.Enabled,
 		serviceKey: c.ServiceKey,
 		url:        c.URL,
 		global:     c.Global,
@@ -94,6 +96,10 @@ func (s *Service) Alert(serviceKey, incidentKey, desc string, level kapacitor.Al
 func (s *Service) preparePost(serviceKey, incidentKey, desc string, level kapacitor.AlertLevel, details interface{}) (string, io.Reader, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
+	if !s.enabled {
+		return "", nil, errors.New("service is not enabled")
+	}
 
 	var eventType string
 	switch level {
