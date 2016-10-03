@@ -47,6 +47,12 @@ type Service struct {
 	clusters        map[string]*influxdbCluster
 	routes          []httpd.Route
 
+	subName   string
+	hostname  string
+	clusterID string
+	httpPort  int
+	useTokens bool
+
 	PointsWriter interface {
 		WritePoints(database, retentionPolicy string, consistencyLevel models.ConsistencyLevel, points []models.Point) error
 	}
@@ -72,92 +78,18 @@ type Service struct {
 func NewService(configs []Config, httpPort int, hostname string, useTokens bool, l *log.Logger) *Service {
 	clusterID := kapacitor.ClusterIDVar.StringValue()
 	subName := subNamePrefix + clusterID
-	clusters := make(map[string]*influxdbCluster, len(configs))
-	var defaultInfluxDBName string
-	for _, c := range configs {
-		if !c.Enabled {
-			// Skip disabled configs
-			continue
-		}
-		urls := make([]influxdb.HTTPConfig, len(c.URLs))
-		// Config should have been validated already, ignore error
-		tlsConfig, _ := getTLSConfig(c.SSLCA, c.SSLCert, c.SSLKey, c.InsecureSkipVerify)
-		if c.InsecureSkipVerify {
-			l.Printf("W! Using InsecureSkipVerify when connecting to InfluxDB @ %v this is insecure!", c.URLs)
-		}
-		var credentials *influxdb.Credentials
-		if c.Username != "" {
-			credentials = &influxdb.Credentials{
-				Method:   influxdb.UserAuthentication,
-				Username: c.Username,
-				Password: c.Password,
-			}
-		}
-		for i, u := range c.URLs {
-			urls[i] = influxdb.HTTPConfig{
-				URL:         u,
-				Credentials: credentials,
-				UserAgent:   "Kapacitor",
-				Timeout:     time.Duration(c.Timeout),
-				TLSConfig:   tlsConfig,
-			}
-		}
-		subs := make(map[subEntry]bool, len(c.Subscriptions))
-		for cluster, rps := range c.Subscriptions {
-			for _, rp := range rps {
-				se := subEntry{cluster, rp, subName}
-				subs[se] = true
-			}
-		}
-		exSubs := make(map[subEntry]bool, len(c.ExcludedSubscriptions))
-		for cluster, rps := range c.ExcludedSubscriptions {
-			for _, rp := range rps {
-				se := subEntry{cluster, rp, subName}
-				exSubs[se] = true
-			}
-		}
-		runningSubs := make(map[subEntry]bool, len(c.Subscriptions))
-		services := make(map[subEntry]openCloser, len(c.Subscriptions))
-		port := httpPort
-		if c.HTTPPort != 0 {
-			port = c.HTTPPort
-		}
-		host := hostname
-		if c.KapacitorHostname != "" {
-			host = c.KapacitorHostname
-		}
-		clusters[c.Name] = &influxdbCluster{
-			clusterName:              c.Name,
-			configs:                  urls,
-			configSubs:               subs,
-			exConfigSubs:             exSubs,
-			hostname:                 host,
-			httpPort:                 port,
-			logger:                   l,
-			udpBind:                  c.UDPBind,
-			udpBuffer:                c.UDPBuffer,
-			udpReadBuffer:            c.UDPReadBuffer,
-			startupTimeout:           time.Duration(c.StartUpTimeout),
-			subscriptionSyncInterval: time.Duration(c.SubscriptionSyncInterval),
-			clusterID:                clusterID,
-			subName:                  subName,
-			disableSubs:              c.DisableSubscriptions,
-			protocol:                 c.SubscriptionProtocol,
-			runningSubs:              runningSubs,
-			services:                 services,
-			// Do not use tokens for non http protocols
-			useTokens: useTokens && (c.SubscriptionProtocol == "http" || c.SubscriptionProtocol == "https"),
-		}
-		if c.Default {
-			defaultInfluxDBName = c.Name
-		}
+	s := &Service{
+		clusters:   make(map[string]*influxdbCluster),
+		clusterID:  clusterID,
+		subName:    subName,
+		hostname:   hostname,
+		httpPort:   httpPort,
+		useTokens:  useTokens,
+		logger:     l,
+		RandReader: rand.Reader,
 	}
-	return &Service{
-		defaultInfluxDB: defaultInfluxDBName,
-		clusters:        clusters,
-		logger:          l,
-		RandReader:      rand.Reader,
-	}
+	s.updateConfigs(configs, false)
+	return s
 }
 
 func (s *Service) Open() error {
@@ -167,8 +99,7 @@ func (s *Service) Open() error {
 		cluster.AuthService = s.AuthService
 		cluster.ClientCreator = s.ClientCreator
 		cluster.randReader = s.RandReader
-		err := cluster.Open()
-		if err != nil {
+		if err := cluster.Open(); err != nil {
 			return err
 		}
 	}
@@ -192,6 +123,83 @@ func (s *Service) Open() error {
 	return errors.Wrap(err, "revoking old cluster tokens")
 }
 
+func (s *Service) Update(newConfigs []interface{}) error {
+	configs := make([]Config, len(newConfigs))
+	for i, c := range newConfigs {
+		if config, ok := c.(Config); ok {
+			configs[i] = config
+		} else {
+			return fmt.Errorf("unexpected config object type, got %T exp %T", c, config)
+		}
+	}
+	return s.updateConfigs(configs, true)
+}
+
+func (s *Service) updateConfigs(configs []Config, shouldOpen bool) error {
+	removedClusters := make(map[string]*influxdbCluster, len(configs))
+	s.defaultInfluxDB = ""
+	for _, c := range configs {
+		cluster, exists := s.clusters[c.Name]
+		if !c.Enabled {
+			if exists {
+				removedClusters[c.Name] = cluster
+			}
+			// Skip disabled configs
+			continue
+		}
+		if exists {
+			if err := cluster.Update(c); err != nil {
+				return errors.Wrapf(err, "failed to update cluster %s", c.Name)
+			}
+		} else {
+			cluster = newInfluxDBCluster(c, s.hostname, s.clusterID, s.subName, s.httpPort, s.useTokens, s.logger)
+			cluster.PointsWriter = s.PointsWriter
+			cluster.LogService = s.LogService
+			cluster.AuthService = s.AuthService
+			cluster.ClientCreator = s.ClientCreator
+			cluster.randReader = s.RandReader
+			if shouldOpen {
+				if err := cluster.Open(); err != nil {
+					return err
+				}
+			}
+			s.clusters[c.Name] = cluster
+		}
+		if c.Default {
+			s.defaultInfluxDB = c.Name
+		}
+	}
+	if s.defaultInfluxDB == "" {
+		return errors.New("no default cluster found")
+	}
+
+	// Find any deleted clusters
+	for name, cluster := range s.clusters {
+		found := false
+		for _, c := range configs {
+			if c.Name == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			removedClusters[name] = cluster
+		}
+	}
+
+	// Unlink all removed clusters
+	for name, cluster := range removedClusters {
+		if err := cluster.UnlinkSubscriptions(); err != nil {
+			s.logger.Printf("E! failed to unlink subscriptions for cluster %s: %s", name, err)
+		}
+		if err := cluster.Close(); err != nil {
+			s.logger.Printf("E! failed to close cluster %s: %s", name, err)
+		}
+	}
+
+	return nil
+}
+
 // Refresh the subscriptions linking for all clusters.
 func (s *Service) handleSubscriptions(w http.ResponseWriter, r *http.Request) {
 	err := s.LinkSubscriptions()
@@ -202,10 +210,10 @@ func (s *Service) handleSubscriptions(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// Trigger a linkSubscriptions event for all clusters
+// Trigger a LinkSubscriptions event for all clusters
 func (s *Service) LinkSubscriptions() error {
 	for clusterName, cluster := range s.clusters {
-		err := cluster.linkSubscriptions()
+		err := cluster.LinkSubscriptions()
 		if err != nil {
 			return errors.Wrapf(err, "linking cluster %s", clusterName)
 		}
@@ -278,6 +286,8 @@ type influxdbCluster struct {
 	runningSubs              map[subEntry]bool
 	useTokens                bool
 
+	closed bool
+
 	clusterID     string
 	subName       string
 	subSyncTicker *time.Ticker
@@ -319,26 +329,109 @@ type subInfo struct {
 	Destinations []string
 }
 
+func newInfluxDBCluster(c Config, hostname, clusterID, subName string, httpPort int, useTokens bool, l *log.Logger) *influxdbCluster {
+	if c.InsecureSkipVerify {
+		l.Printf("W! Using InsecureSkipVerify when connecting to InfluxDB @ %v this is insecure!", c.URLs)
+	}
+	urls := urlsFromConfig(c)
+	subs := subsFromConfig(subName, c.Subscriptions)
+	exSubs := subsFromConfig(subName, c.ExcludedSubscriptions)
+	port := httpPort
+	if c.HTTPPort != 0 {
+		port = c.HTTPPort
+	}
+	host := hostname
+	if c.KapacitorHostname != "" {
+		host = c.KapacitorHostname
+	}
+	return &influxdbCluster{
+		clusterName:              c.Name,
+		configs:                  urls,
+		configSubs:               subs,
+		exConfigSubs:             exSubs,
+		hostname:                 host,
+		httpPort:                 port,
+		logger:                   l,
+		udpBind:                  c.UDPBind,
+		udpBuffer:                c.UDPBuffer,
+		udpReadBuffer:            c.UDPReadBuffer,
+		startupTimeout:           time.Duration(c.StartUpTimeout),
+		subscriptionSyncInterval: time.Duration(c.SubscriptionSyncInterval),
+		clusterID:                clusterID,
+		subName:                  subName,
+		disableSubs:              c.DisableSubscriptions,
+		protocol:                 c.SubscriptionProtocol,
+		runningSubs:              make(map[subEntry]bool, len(c.Subscriptions)),
+		services:                 make(map[subEntry]openCloser, len(c.Subscriptions)),
+		// Do not use tokens for non http protocols
+		useTokens: useTokens && (c.SubscriptionProtocol == "http" || c.SubscriptionProtocol == "https"),
+		closed:    true,
+	}
+}
+
+func urlsFromConfig(c Config) []influxdb.HTTPConfig {
+	urls := make([]influxdb.HTTPConfig, len(c.URLs))
+	// Config should have been validated already, ignore error
+	tlsConfig, _ := getTLSConfig(c.SSLCA, c.SSLCert, c.SSLKey, c.InsecureSkipVerify)
+	var credentials *influxdb.Credentials
+	if c.Username != "" {
+		credentials = &influxdb.Credentials{
+			Method:   influxdb.UserAuthentication,
+			Username: c.Username,
+			Password: c.Password,
+		}
+	}
+	for i, u := range c.URLs {
+		urls[i] = influxdb.HTTPConfig{
+			URL:         u,
+			Credentials: credentials,
+			UserAgent:   "Kapacitor",
+			Timeout:     time.Duration(c.Timeout),
+			TLSConfig:   tlsConfig,
+		}
+	}
+	return urls
+}
+
+func subsFromConfig(subName string, s map[string][]string) map[subEntry]bool {
+	subs := make(map[subEntry]bool, len(s))
+	for cluster, rps := range s {
+		for _, rp := range rps {
+			se := subEntry{cluster, rp, subName}
+			subs[se] = true
+		}
+	}
+	return subs
+}
+
 func (s *influxdbCluster) Open() error {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.closed {
+		s.mu.Unlock()
+		return nil
+	}
+	s.closed = false
 	if !s.disableSubs {
 		if s.subscriptionSyncInterval != 0 {
 			s.subSyncTicker = time.NewTicker(s.subscriptionSyncInterval)
 			go func() {
 				for _ = range s.subSyncTicker.C {
-					s.linkSubscriptions()
+					s.LinkSubscriptions()
 				}
 			}()
 		}
 	}
-	// Release lock so we can call linkSubscriptions.
-	s.mu.Unlock()
 	return s.linkSubscriptions()
 }
 
 func (s *influxdbCluster) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.closed {
+		return nil
+	}
+	s.closed = true
 
 	if s.subSyncTicker != nil {
 		s.subSyncTicker.Stop()
@@ -352,6 +445,25 @@ func (s *influxdbCluster) Close() error {
 		}
 	}
 	return lastErr
+}
+
+func (s *influxdbCluster) Update(c Config) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if c.InsecureSkipVerify {
+		s.logger.Printf("W! Using InsecureSkipVerify when connecting to InfluxDB @ %v this is insecure!", c.URLs)
+	}
+	if c.HTTPPort != 0 {
+		s.httpPort = c.HTTPPort
+	}
+	if c.KapacitorHostname != "" {
+		s.hostname = c.KapacitorHostname
+	}
+	s.configs = urlsFromConfig(c)
+	s.configSubs = subsFromConfig(s.subName, c.Subscriptions)
+	s.exConfigSubs = subsFromConfig(s.subName, c.ExcludedSubscriptions)
+	return s.linkSubscriptions()
+
 }
 
 func (s *influxdbCluster) Addr() string {
@@ -378,14 +490,7 @@ func (s *influxdbCluster) NewClient() (c influxdb.Client, err error) {
 	}
 	return
 }
-
-func (s *influxdbCluster) linkSubscriptions() error {
-	if s.disableSubs {
-		return nil
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.logger.Println("D! linking subscriptions for cluster", s.clusterName)
+func (s *influxdbCluster) connectWithBackoff() (influxdb.Client, error) {
 	b := backoff.NewExponentialBackOff()
 	b.MaxElapsedTime = s.startupTimeout
 	ticker := backoff.NewTicker(b)
@@ -401,9 +506,72 @@ func (s *influxdbCluster) linkSubscriptions() error {
 		break
 	}
 	if err != nil {
+		return nil, err
+	}
+	return cli, nil
+}
+
+// UnlinkSubscriptions acquires the lock and then unlinks the subscriptions
+func (s *influxdbCluster) UnlinkSubscriptions() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.unlinkSubscriptions()
+}
+
+// unlinkSubscriptions, you must have the lock to call this function.
+func (s *influxdbCluster) unlinkSubscriptions() error {
+	s.logger.Println("D! unlinking subscriptions for cluster", s.clusterName)
+	cli, err := s.connectWithBackoff()
+	if err != nil {
 		return err
 	}
+	// Get all existing subscriptions
+	resp, err := s.execQuery(cli, &influxql.ShowSubscriptionsStatement{})
+	if err != nil {
+		return err
+	}
+	for _, res := range resp.Results {
+		for _, series := range res.Series {
+			for _, v := range series.Values {
+				se := subEntry{
+					db: series.Name,
+				}
+				for i, c := range series.Columns {
+					switch c {
+					case "name":
+						se.name = v[i].(string)
+					}
+				}
+				if se.name == s.subName {
+					s.dropSub(cli, se.name, se.db, se.rp)
+					s.closeSub(se)
+				}
+			}
+		}
+	}
+	return nil
+}
 
+// LinkSubscriptions acquires the lock and then links the subscriptions.
+func (s *influxdbCluster) LinkSubscriptions() error {
+	if s.disableSubs {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.linkSubscriptions()
+}
+
+// linkSubscriptions you must have the lock to call this method.
+func (s *influxdbCluster) linkSubscriptions() error {
+	if s.disableSubs {
+		return nil
+	}
+	s.logger.Println("D! linking subscriptions for cluster", s.clusterName)
+	cli, err := s.connectWithBackoff()
+	if err != nil {
+		return err
+	}
 	numSubscriptions := int64(0)
 
 	// Get all databases and retention policies
@@ -507,10 +675,11 @@ func (s *influxdbCluster) linkSubscriptions() error {
 		}
 	}
 
-	// Compare existing subs to configured list
-	all := len(s.configSubs) == 0
+	// start any missing subscriptions
+	// and drop any extra subs
 	for se, si := range existingSubs {
-		if (s.configSubs[se] || all) && !s.exConfigSubs[se] && !s.runningSubs[se] {
+		shouldExist := s.shouldSubExist(se)
+		if shouldExist && !s.runningSubs[se] {
 			// Check if this kapacitor instance is in the list of hosts
 			for _, dest := range si.Destinations {
 				u, err := url.Parse(dest)
@@ -531,14 +700,19 @@ func (s *influxdbCluster) linkSubscriptions() error {
 					break
 				}
 			}
+		} else if !shouldExist {
+			// Drop extra sub
+			s.dropSub(cli, se.name, se.db, se.rp)
+			// Remove from existing list
+			delete(existingSubs, se)
 		}
 	}
+
 	// create and start any new subscriptions
-	// stop any removed subscriptions
 	for _, se := range allSubs {
 		_, exists := existingSubs[se]
-		// If we have been configured to subscribe and the subscription is not started yet.
-		if (s.configSubs[se] || all) && !s.exConfigSubs[se] && !(s.runningSubs[se] && exists) {
+		// If we have been configured to subscribe and the subscription is not created/started yet.
+		if s.shouldSubExist(se) && !(s.runningSubs[se] && exists) {
 			var destination string
 			switch s.protocol {
 			case "http", "https":
@@ -637,6 +811,10 @@ func (s *influxdbCluster) linkSubscriptions() error {
 
 	kapacitor.NumSubscriptionsVar.Set(numSubscriptions)
 	return nil
+}
+
+func (s *influxdbCluster) shouldSubExist(se subEntry) bool {
+	return (len(s.configSubs) == 0 || s.configSubs[se]) && !s.exConfigSubs[se]
 }
 
 // Determine whether a subscription has differing values from the config.

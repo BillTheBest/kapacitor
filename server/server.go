@@ -247,7 +247,7 @@ func (s *Server) appendInfluxDBService() error {
 		s.InfluxDBService = srv
 		s.TaskMaster.InfluxDBService = srv
 		s.AppendService("influxdb", srv)
-		//s.DynamicServices["influxdb"] = srv
+		s.DynamicServices["influxdb"] = srv
 	}
 	return nil
 }
@@ -520,6 +520,20 @@ func (s *Server) Open() error {
 	if err := s.startServices(); err != nil {
 		s.Close()
 		return err
+	}
+	// Apply initial config updates
+	configs, err := s.ConfigOverrideService.Config()
+	if err != nil {
+		return errors.Wrap(err, "failed to apply config overrides")
+	}
+	for service, config := range configs {
+		if srv, ok := s.DynamicServices[service]; !ok {
+			s.Logger.Printf("E! got configuration update for unkown service %s", service)
+		} else {
+			if err := srv.Update(config); err != nil {
+				s.Logger.Printf("E! got error when attempting to update configuration for service %s: %v", service, err)
+			}
+		}
 	}
 
 	go s.watchServices()
