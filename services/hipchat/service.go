@@ -17,6 +17,7 @@ import (
 
 type Service struct {
 	mu               sync.RWMutex
+	enabled          bool
 	room             string
 	token            string
 	url              string
@@ -27,6 +28,7 @@ type Service struct {
 
 func NewService(c Config, l *log.Logger) *Service {
 	return &Service{
+		enabled:          c.Enabled,
 		room:             c.Room,
 		token:            c.Token,
 		url:              c.URL,
@@ -106,6 +108,9 @@ func (s *Service) preparePost(room, token, message string, level kapacitor.Alert
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	if !s.enabled {
+		return "", nil, errors.New("service is not enabled")
+	}
 	//Generate HipChat API Url including room and authentication token
 	if room == "" {
 		room = s.room

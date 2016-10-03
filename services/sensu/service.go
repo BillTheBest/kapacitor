@@ -14,19 +14,21 @@ import (
 )
 
 type Service struct {
-	mu     sync.RWMutex
-	addr   string
-	source string
-	logger *log.Logger
+	mu      sync.RWMutex
+	enabled bool
+	addr    string
+	source  string
+	logger  *log.Logger
 }
 
 var validNamePattern = regexp.MustCompile(`^[\w\.-]+$`)
 
 func NewService(c Config, l *log.Logger) *Service {
 	return &Service{
-		addr:   c.Addr,
-		source: c.Source,
-		logger: l,
+		enabled: c.Enabled,
+		addr:    c.Addr,
+		source:  c.Source,
+		logger:  l,
 	}
 }
 
@@ -83,6 +85,10 @@ func (s *Service) Alert(name, output string, level kapacitor.AlertLevel) error {
 func (s *Service) prepareData(name, output string, level kapacitor.AlertLevel) (*net.TCPAddr, map[string]interface{}, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
+	if !s.enabled {
+		return nil, nil, errors.New("service is not enabled")
+	}
 
 	var status int
 	switch level {

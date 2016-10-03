@@ -3,6 +3,7 @@ package telegram
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -13,6 +14,7 @@ import (
 
 type Service struct {
 	mu                    sync.RWMutex
+	enabled               bool
 	chatId                string
 	parseMode             string
 	disableWebPagePreview bool
@@ -25,6 +27,7 @@ type Service struct {
 
 func NewService(c Config, l *log.Logger) *Service {
 	return &Service{
+		enabled:               c.Enabled,
 		chatId:                c.ChatId,
 		parseMode:             c.ParseMode,
 		disableWebPagePreview: c.DisableWebPagePreview,
@@ -112,6 +115,9 @@ func (s *Service) preparePost(chatId, parseMode, message string, disableWebPageP
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	if !s.enabled {
+		return "", nil, errors.New("service is not enabled")
+	}
 	if chatId == "" {
 		chatId = s.chatId
 	}
