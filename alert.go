@@ -950,13 +950,8 @@ func (a *AlertNode) handleTcp(tcp *pipeline.TcpHandler, ad *AlertData) {
 }
 
 func (a *AlertNode) handleEmail(email *pipeline.EmailHandler, ad *AlertData) {
-	if a.et.tm.SMTPService != nil {
-		err := a.et.tm.SMTPService.SendMail(email.ToList, ad.Message, ad.Details)
-		if err != nil {
-			a.logger.Println("E!", err)
-		}
-	} else {
-		a.logger.Println("E! smtp service not enabled, cannot send email.")
+	if err := a.et.tm.SMTPService.SendMail(email.ToList, ad.Message, ad.Details); err != nil {
+		a.logger.Println("E! failed to send email:", err)
 	}
 }
 
