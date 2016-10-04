@@ -454,6 +454,7 @@ If you have existing tasks which do not match this pattern they should continue 
 
 ### Features
 
+- [#928](https://github.com/influxdata/kapacitor/issues/928): Add new API endpoint for dynamically overriding sections of the configuration.
 
 ### Bugfixes
 
