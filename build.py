@@ -46,7 +46,7 @@ VENDOR = "InfluxData"
 DESCRIPTION = "Time series data processing engine"
 
 # SCRIPT START
-go_vet_command = "go tool vet -composites=false"
+go_vet_command = "go tool vet -composites=false -example=false"
 prereqs = [ 'git', 'go' ]
 optional_prereqs = [ 'fpm', 'rpmbuild', 'gpg' ]
 
