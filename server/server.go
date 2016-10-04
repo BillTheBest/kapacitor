@@ -500,17 +500,19 @@ func (s *Server) Open() error {
 		s.Close()
 		return err
 	}
-	// Apply initial config updates
-	configs, err := s.ConfigOverrideService.Config()
-	if err != nil {
-		return errors.Wrap(err, "failed to apply config overrides")
-	}
-	for service, config := range configs {
-		if srv, ok := s.DynamicServices[service]; !ok {
-			return fmt.Errorf("found configuration override for unknown service %q", service)
-		} else {
-			if err := srv.Update(config); err != nil {
-				return errors.Wrapf(err, "failed to update configuration for service %s", service)
+	if !s.config.SkipConfigOverrides {
+		// Apply initial config updates
+		configs, err := s.ConfigOverrideService.Config()
+		if err != nil {
+			return errors.Wrap(err, "failed to apply config overrides")
+		}
+		for service, config := range configs {
+			if srv, ok := s.DynamicServices[service]; !ok {
+				return fmt.Errorf("found configuration override for unknown service %q", service)
+			} else {
+				if err := srv.Update(config); err != nil {
+					return errors.Wrapf(err, "failed to update configuration for service %s", service)
+				}
 			}
 		}
 	}

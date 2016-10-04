@@ -16,15 +16,20 @@ var ErrNoRecipients = errors.New("not sending email, no recipients defined")
 type Service struct {
 	mu     sync.RWMutex
 	c      Config
-	mail   chan *gomail.Message
+	mail   chan update
 	logger *log.Logger
 	wg     sync.WaitGroup
+}
+
+type update struct {
+	redial  bool
+	message *gomail.Message
 }
 
 func NewService(c Config, l *log.Logger) *Service {
 	return &Service{
 		c:      c,
-		mail:   make(chan *gomail.Message),
+		mail:   make(chan update),
 		logger: l,
 	}
 }
@@ -73,8 +78,10 @@ func (s *Service) Update(newConfig []interface{}) error {
 			s.wg.Add(1)
 			go s.runMailer()
 		}
-		// Signal to create new dialer
-		s.mail <- nil
+		if c.Enabled {
+			// Signal to create new dialer
+			s.mail <- update{redial: true}
+		}
 	}
 	return nil
 }
@@ -117,12 +124,12 @@ func (s *Service) runMailer() {
 	for {
 		timer := time.NewTimer(idleTimeout)
 		select {
-		case m, ok := <-s.mail:
+		case u, ok := <-s.mail:
 			if !ok {
 				return
 			}
 			// Check for special nil message to update dialer
-			if m == nil {
+			if u.redial {
 				// Close old connection
 				if conn != nil {
 					if err := conn.Close(); err != nil {
@@ -147,7 +154,7 @@ func (s *Service) runMailer() {
 				open = true
 			}
 			log.Println("D! conn", conn, open)
-			if err := gomail.Send(conn, m); err != nil {
+			if err := gomail.Send(conn, u.message); err != nil {
 				s.logger.Println("E!", err)
 			}
 		// Close the connection to the SMTP server if no email was sent in
@@ -169,7 +176,7 @@ func (s *Service) SendMail(to []string, subject, body string) error {
 	if err != nil {
 		return err
 	}
-	s.mail <- m
+	s.mail <- update{message: m}
 	return nil
 }
 
