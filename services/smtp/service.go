@@ -14,16 +14,17 @@ import (
 var ErrNoRecipients = errors.New("not sending email, no recipients defined")
 
 type Service struct {
-	mu     sync.RWMutex
-	c      Config
-	mail   chan update
-	logger *log.Logger
-	wg     sync.WaitGroup
+	mu      sync.RWMutex
+	c       Config
+	mail    chan update
+	running bool
+	logger  *log.Logger
+	wg      sync.WaitGroup
 }
 
 type update struct {
-	redial  bool
-	message *gomail.Message
+	newDialer bool
+	message   *gomail.Message
 }
 
 func NewService(c Config, l *log.Logger) *Service {
@@ -66,21 +67,19 @@ func (s *Service) Update(newConfig []interface{}) error {
 	if c, ok := newConfig[0].(Config); !ok {
 		return fmt.Errorf("expected config object to be of type %T, got %T", c, newConfig[0])
 	} else {
-		nowEnabled := false
 		s.mu.Lock()
-		nowEnabled = !s.c.Enabled && c.Enabled
+		previousEnabled := s.c.Enabled
 		s.c = c
-		s.mu.Unlock()
-		if nowEnabled {
-			if c.From == "" {
-				return errors.New("cannot open smtp service: missing from address in configuration")
-			}
+		// If we have not already started the runMailer goroutine start it now.
+		if !s.running && !previousEnabled && s.c.Enabled {
 			s.wg.Add(1)
 			go s.runMailer()
+			s.running = true
 		}
+		s.mu.Unlock()
 		if c.Enabled {
 			// Signal to create new dialer
-			s.mail <- update{redial: true}
+			s.mail <- update{newDialer: true}
 		}
 	}
 	return nil
@@ -98,7 +97,7 @@ func (s *Service) StateChangesOnly() bool {
 	return s.c.StateChangesOnly
 }
 
-func (s *Service) dialer() (d *gomail.Dialer) {
+func (s *Service) dialer() (d *gomail.Dialer, idleTimeout time.Duration) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if s.c.Username == "" {
@@ -109,14 +108,16 @@ func (s *Service) dialer() (d *gomail.Dialer) {
 	if s.c.NoVerify {
 		d.TLSConfig = &tls.Config{InsecureSkipVerify: true}
 	}
+	idleTimeout = time.Duration(s.c.IdleTimeout)
 	return
 }
 
 func (s *Service) runMailer() {
 	defer s.wg.Done()
 
-	d := s.dialer()
-	idleTimeout := time.Duration(s.c.IdleTimeout)
+	var idleTimeout time.Duration
+	var d *gomail.Dialer
+	d, idleTimeout = s.dialer()
 
 	var conn gomail.SendCloser
 	var err error
@@ -129,21 +130,18 @@ func (s *Service) runMailer() {
 				return
 			}
 			// Check for special nil message to update dialer
-			if u.redial {
+			if u.newDialer {
 				// Close old connection
 				if conn != nil {
 					if err := conn.Close(); err != nil {
 						s.logger.Println("E! error closing connection to old SMTP server:", err)
 					}
+					conn = nil
 				}
 				// Create new dialer
-				d = s.dialer()
+				d, idleTimeout = s.dialer()
 				open = false
-				// Update idleTimeout
-				s.mu.RLock()
-				idleTimeout = time.Duration(s.c.IdleTimeout)
-				s.mu.RUnlock()
-				// Nothing more to do with nil message
+				// Nothing more to do
 				break
 			}
 			if !open {
