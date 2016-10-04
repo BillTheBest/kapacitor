@@ -54,6 +54,7 @@ func (s *Service) Update(newConfig []interface{}) error {
 		return fmt.Errorf("expected config object to be of type %T, got %T", c, newConfig[0])
 	} else {
 		s.mu.Lock()
+		s.enabled = c.Enabled
 		s.room = c.Room
 		s.token = c.Token
 		s.url = c.URL
