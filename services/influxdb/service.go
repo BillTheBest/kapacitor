@@ -138,6 +138,7 @@ func (s *Service) Update(newConfigs []interface{}) error {
 func (s *Service) updateConfigs(configs []Config, shouldOpen bool) error {
 	removedClusters := make(map[string]*influxdbCluster, len(configs))
 	s.defaultInfluxDB = ""
+	enabledCount := 0
 	for _, c := range configs {
 		cluster, exists := s.clusters[c.Name]
 		if !c.Enabled {
@@ -147,6 +148,7 @@ func (s *Service) updateConfigs(configs []Config, shouldOpen bool) error {
 			// Skip disabled configs
 			continue
 		}
+		enabledCount++
 		if exists {
 			if err := cluster.Update(c); err != nil {
 				return errors.Wrapf(err, "failed to update cluster %s", c.Name)
@@ -169,7 +171,7 @@ func (s *Service) updateConfigs(configs []Config, shouldOpen bool) error {
 			s.defaultInfluxDB = c.Name
 		}
 	}
-	if s.defaultInfluxDB == "" {
+	if enabledCount > 0 && s.defaultInfluxDB == "" {
 		return errors.New("no default cluster found")
 	}
 
