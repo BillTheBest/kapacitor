@@ -65,7 +65,6 @@ package override
 import (
 	"encoding"
 	"fmt"
-	"log"
 	"reflect"
 	"sort"
 	"strconv"
@@ -658,7 +657,6 @@ func getElementKey(f reflect.StructField) string {
 func findFieldByElementKey(v reflect.Value, elementKey string, optionNameFunc OptionNameFunc) (field reflect.Value) {
 	v = reflect.Indirect(v)
 	if v.Kind() != reflect.Struct {
-		log.Println("value is not a struct", v)
 		return
 	}
 	field = v.FieldByName(elementKey)

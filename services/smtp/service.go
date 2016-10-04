@@ -153,7 +153,6 @@ func (s *Service) runMailer() {
 				}
 				open = true
 			}
-			log.Println("D! conn", conn, open)
 			if err := gomail.Send(conn, u.message); err != nil {
 				s.logger.Println("E!", err)
 			}
