@@ -1521,7 +1521,7 @@ type ConfigUpdateAction struct {
 	Remove []string               `json:"remove,omitempty"`
 }
 
-// ConfigUpdate performs a given ConfigUpdateAction
+// ConfigUpdate performs a given ConfigUpdateAction against a given section or element.
 func (c *Client) ConfigUpdate(link Link, action ConfigUpdateAction) error {
 	if link.Href == "" {
 		return fmt.Errorf("invalid link %v", link)
@@ -1550,7 +1550,7 @@ type ConfigSections map[string]ConfigSection
 type ConfigSection []ConfigElement
 type ConfigElement map[string]interface{}
 
-// ConfigSection returns the running configuration for a section.
+// ConfigSections returns all the running configuration sections that can be modified.
 func (c *Client) ConfigSections() (ConfigSections, error) {
 	u := *c.url
 	u.Path = configPath
@@ -1590,7 +1590,7 @@ func (c *Client) ConfigSection(link Link) (ConfigSection, error) {
 	return section, nil
 }
 
-// ConfigElement returns the running configuration for a section and element.
+// ConfigElement returns the running configuration for a given section and element.
 func (c *Client) ConfigElement(link Link) (ConfigElement, error) {
 	if link.Href == "" {
 		return nil, fmt.Errorf("invalid link %v", link)
