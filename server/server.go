@@ -214,13 +214,15 @@ func (s *Server) appendStorageService() {
 }
 
 func (s *Server) appendConfigOverrideService(c *Config) {
-	l := s.LogService.NewLogger("[config-override] ", log.LstdFlags)
-	srv := config.NewService(c, l, s.configUpdates)
-	srv.HTTPDService = s.HTTPDService
-	srv.StorageService = s.StorageService
+	if c.ConfigOverride.Enabled {
+		l := s.LogService.NewLogger("[config-override] ", log.LstdFlags)
+		srv := config.NewService(c, l, s.configUpdates)
+		srv.HTTPDService = s.HTTPDService
+		srv.StorageService = s.StorageService
 
-	s.ConfigOverrideService = srv
-	s.AppendService("config", srv)
+		s.ConfigOverrideService = srv
+		s.AppendService("config", srv)
+	}
 }
 
 func (s *Server) appendSMTPService() {
@@ -520,7 +522,7 @@ func (s *Server) Open() error {
 		s.Close()
 		return err
 	}
-	if !s.config.SkipConfigOverrides {
+	if s.ConfigOverrideService != nil && !s.config.SkipConfigOverrides {
 		// Apply initial config updates
 		configs, err := s.ConfigOverrideService.Config()
 		if err != nil {

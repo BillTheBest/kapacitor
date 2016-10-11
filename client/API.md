@@ -1346,12 +1346,39 @@ You can set configuration overrides via the API for certain sections of the conf
 The overrides set via the API always take precedent over what may exist in the configuration file.
 The sections available for overriding include the InfluxDB clusters and the alert handler sections.
 
->NOTE: The intent of the API is to allow for dynamic configuration of sensitive credentials without requiring that the Kapacitor process be restarted.
+
+The intent of the API is to allow for dynamic configuration of sensitive credentials without requiring that the Kapacitor process be restarted.
 As such, it is recommended to use either the configuration file or the API to manage these configuration sections, but not both.
-This will help to eliminate any confusion about the source of authority for the configuration values.
+This will help to eliminate any confusion that may arise as to the source of a given configuration option.
 
 
-The paths for the configuration sections are as follows:
+### Enabling/Disabling Configuration Overrides
+
+By default the ability to override the configuration is enabled.
+If you do not wish to enable this feature it can be disabled via the `config-override` configuration section.
+
+```
+[config-override]
+  enabled = false
+```
+
+If the `config-override` service is disabled then the relevant API endpoints will return 404 not found errors.
+
+### Recovering from bad configuration
+
+If somehow you have created a configuration that causes Kapacitor to crash or otherwise not function,
+you can disable applying overrides during startup with the `skip-config-overrides` top level configuration option.
+
+```
+# This configuration option is only a safe guard and should not be needed in practice.
+skip-config-overrides = true
+```
+
+This allows you to still access the API to fix any unwanted configuration without applying that configuration during statup.
+
+### Overview
+
+The paths for the configuration API endpoints are as follows:
 
 `/kapacitor/v1/config/<section name>[/<element name>]`
 

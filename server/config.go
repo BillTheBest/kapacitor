@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/influxdata/kapacitor/services/alerta"
+	"github.com/influxdata/kapacitor/services/config"
 	"github.com/influxdata/kapacitor/services/deadman"
 	"github.com/influxdata/kapacitor/services/hipchat"
 	"github.com/influxdata/kapacitor/services/httpd"
@@ -41,14 +42,14 @@ import (
 
 // Config represents the configuration format for the kapacitord binary.
 type Config struct {
-	HTTP       httpd.Config      `toml:"http"`
-	Replay     replay.Config     `toml:"replay"`
-	Storage    storage.Config    `toml:"storage"`
-	Task       task_store.Config `toml:"task"`
-	InfluxDB   []influxdb.Config `toml:"influxdb"`
-	InfluxDB   []influxdb.Config `toml:"influxdb" override:"influxdb,element-key=name"`
-	Logging    logging.Config    `toml:"logging"`
-	Kubernetes k8s.Config        `toml:"kubernetes"`
+	HTTP           httpd.Config      `toml:"http"`
+	Replay         replay.Config     `toml:"replay"`
+	Storage        storage.Config    `toml:"storage"`
+	Task           task_store.Config `toml:"task"`
+	InfluxDB       []influxdb.Config `toml:"influxdb" override:"influxdb,element-key=name"`
+	Logging        logging.Config    `toml:"logging"`
+	ConfigOverride config.Config     `toml:"config-override"`
+	Kubernetes     k8s.Config        `toml:"kubernetes"`
 
 	// Input services
 	Graphites []graphite.Config `toml:"graphite"`
@@ -91,6 +92,7 @@ func NewConfig() *Config {
 	c.InfluxDB = []influxdb.Config{influxdb.NewConfig()}
 	c.Logging = logging.NewConfig()
 	c.Kubernetes = k8s.NewConfig()
+	c.ConfigOverride = config.NewConfig()
 
 	c.Collectd = collectd.NewConfig()
 	c.OpenTSDB = opentsdb.NewConfig()
