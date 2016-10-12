@@ -24,6 +24,7 @@ const (
 type ConfigUpdate struct {
 	Name      string
 	NewConfig []interface{}
+	ErrC      chan<- error
 }
 
 type Service struct {
@@ -187,18 +188,30 @@ func (s *Service) handleUpdateSection(w http.ResponseWriter, r *http.Request) {
 	os := convertOverrides(overrides)
 	newConfig, err := s.overrider.OverrideAll(os)
 	if err != nil {
-		httpd.HttpError(w, fmt.Sprint("failed to update config:", err), true, http.StatusBadRequest)
+		httpd.HttpError(w, err.Error(), true, http.StatusBadRequest)
 		return
 	}
 	sectionList := make([]interface{}, len(newConfig[section]))
 	for i, s := range newConfig[section] {
 		sectionList[i] = s.Value()
 	}
+
+	// Construct ConfigUpdate
+	errC := make(chan error, 1)
 	cu := ConfigUpdate{
 		Name:      section,
 		NewConfig: sectionList,
+		ErrC:      errC,
 	}
+
+	// Send update
 	s.updates <- cu
+	// Wait for error
+	if err := <-errC; err != nil {
+		httpd.HttpError(w, fmt.Sprintf("failed to update configuration %s/%s: %v", section, element, err), true, http.StatusInternalServerError)
+		return
+	}
+	// Success
 	w.WriteHeader(http.StatusNoContent)
 }
 

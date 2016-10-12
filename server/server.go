@@ -569,11 +569,9 @@ func (s *Server) watchServices() {
 func (s *Server) watchConfigUpdates() {
 	for cu := range s.configUpdates {
 		if srv, ok := s.DynamicServices[cu.Name]; !ok {
-			s.Logger.Printf("E! got configuration update for unknown service %s", cu.Name)
+			cu.ErrC <- fmt.Errorf("received configuration update for unknown dynamic service %s", cu.Name)
 		} else {
-			if err := srv.Update(cu.NewConfig); err != nil {
-				s.Logger.Printf("E! got error when attempting to update configuration for service %s: %v", cu.Name, err)
-			}
+			cu.ErrC <- srv.Update(cu.NewConfig)
 		}
 	}
 }
