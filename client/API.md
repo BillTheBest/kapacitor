@@ -118,7 +118,7 @@ When using PATCH, if any option is missing it will be left unmodified.
 
 The vars object has the form:
 
-```
+```json
 {
     "field_name" : {
         "value": <VALUE>,
@@ -167,7 +167,7 @@ POST /kapacitor/v1/tasks
 
 Response with task id and link.
 
-```
+```json
 {
     "link" : {"rel": "self", "href": "/kapacitor/v1/tasks/TASK_ID"},
     "id" : "TASK_ID",
@@ -236,7 +236,7 @@ POST /kapacitor/v1/tasks
 
 Response with task id and link.
 
-```
+```json
 {
     "id" : "TASK_ID",
     "link" : {"rel": "self", "href": "/kapacitor/v1/tasks/TASK_ID"}
@@ -281,7 +281,7 @@ Get information about a task using defaults.
 GET /kapacitor/v1/tasks/TASK_ID
 ```
 
-```
+```json
 {
     "link" : {"rel": "self", "href": "/kapacitor/v1/tasks/TASK_ID"},
     "id" : "TASK_ID",
@@ -305,7 +305,7 @@ Get information about a task using only labels in the DOT content and skip the f
 GET /kapacitor/v1/tasks/TASK_ID?dot-view=labels&script-format=raw
 ```
 
-```
+```json
 {
     "link" : {"rel": "self", "href": "/kapacitor/v1/tasks/TASK_ID"},
     "id" : "TASK_ID",
@@ -369,7 +369,7 @@ Get all tasks.
 GET /kapacitor/v1/tasks
 ```
 
-```
+```json
 {
     "tasks" : [
         {
@@ -406,7 +406,7 @@ Optionally specify a glob `pattern` to list only matching tasks.
 GET /kapacitor/v1/task?pattern=TASK*
 ```
 
-```
+```json
 {
     "tasks" : [
         {
@@ -431,7 +431,7 @@ Get all tasks, but only the status, executing and error fields.
 GET /kapacitor/v1/tasks?fields=status&fields=executing&fields=error
 ```
 
-```
+```json
 {
     "tasks" : [
         {
@@ -483,7 +483,7 @@ stream
 GET /kapacitor/v1/tasks/TASK_ID/mycustom_endpoint
 ```
 
-```
+```json
 {
     "series": [
         {
@@ -562,7 +562,7 @@ POST /kapacitor/v1/templates
 
 Response with template id and link.
 
-```
+```json
 {
     "link" : {"rel": "self", "href": "/kapacitor/v1/templates/TASK_ID"},
     "id" : "TASK_ID",
@@ -618,7 +618,7 @@ Get information about a template using defaults.
 GET /kapacitor/v1/templates/TEMPLATE_ID
 ```
 
-```
+```json
 {
     "link" : {"rel": "self", "href": "/kapacitor/v1/templates/TEMPLATE_ID"},
     "id" : "TASK_ID",
@@ -680,7 +680,7 @@ Get all templates.
 GET /kapacitor/v1/templates
 ```
 
-```
+```json
 {
     "templates" : [
         {
@@ -709,7 +709,7 @@ Optionally specify a glob `pattern` to list only matching templates.
 GET /kapacitor/v1/template?pattern=TEMPLATE*
 ```
 
-```
+```json
 {
     "templates" : [
         {
@@ -730,7 +730,7 @@ Get all templates, but only the script and error fields.
 GET /kapacitor/v1/templates?fields=status&fields=executing&fields=error
 ```
 
-```
+```json
 {
     "templates" : [
         {
@@ -863,7 +863,7 @@ POST /kapacitor/v1/recordings/query
 
 All recordings are assigned an ID which is returned in this format with a link.
 
-```
+```json
 {
     "link" : {"rel": "self", "href": "/kapacitor/v1/recordings/e24db07d-1646-4bb3-a445-828f5049bea0"},
     "id" : "e24db07d-1646-4bb3-a445-828f5049bea0",
@@ -901,7 +901,7 @@ A recording has these read only properties.
 GET /kapacitor/v1/recordings/e24db07d-1646-4bb3-a445-828f5049bea0
 ```
 
-```
+```json
 {
     "link" : {"rel": "self", "href": "/kapacitor/v1/recordings/e24db07d-1646-4bb3-a445-828f5049bea0"},
     "id" : "e24db07d-1646-4bb3-a445-828f5049bea0",
@@ -920,7 +920,7 @@ Once the recording is complete.
 GET /kapacitor/v1/recordings/e24db07d-1646-4bb3-a445-828f5049bea0
 ```
 
-```
+```json
 {
     "link" : {"rel": "self", "href": "/kapacitor/v1/recordings/e24db07d-1646-4bb3-a445-828f5049bea0"},
     "id" : "e24db07d-1646-4bb3-a445-828f5049bea0",
@@ -939,7 +939,7 @@ Or if the recording fails.
 GET /kapacitor/v1/recordings/e24db07d-1646-4bb3-a445-828f5049bea0
 ```
 
-```
+```json
 {
     "link" : {"rel": "self", "href": "/kapacitor/v1/recordings/e24db07d-1646-4bb3-a445-828f5049bea0"},
     "id" : "e24db07d-1646-4bb3-a445-828f5049bea0",
@@ -994,7 +994,7 @@ Recordings are sorted by date.
 GET /kapacitor/v1/recordings
 ```
 
-```
+```json
 {
     "recordings" : [
         {
@@ -1081,7 +1081,7 @@ POST /kapacitor/v1/replays/
 
 The request returns once the replay is started and provides a replay ID and link.
 
-```
+```json
 {
     "link" : {"rel": "self", "href": "/kapacitor/v1/replays/ad95677b-096b-40c8-82a8-912706f41d4c"},
     "id" : "ad95677b-096b-40c8-82a8-912706f41d4c",
@@ -1172,7 +1172,7 @@ POST /kapacitor/v1/replays/query
 
 All replays are assigned an ID which is returned in this format with a link.
 
-```
+```json
 {
     "link" : {"rel": "self", "href": "/kapacitor/v1/replays/e24db07d-1646-4bb3-a445-828f5049bea0"},
     "id" : "e24db07d-1646-4bb3-a445-828f5049bea0",
@@ -1215,7 +1215,7 @@ Get the status of a replay.
 GET /kapacitor/v1/replays/ad95677b-096b-40c8-82a8-912706f41d4c
 ```
 
-```
+```json
 {
     "link" : {"rel": "self", "href": "/kapacitor/v1/replays/ad95677b-096b-40c8-82a8-912706f41d4c"},
     "id" : "ad95677b-096b-40c8-82a8-912706f41d4c",
@@ -1235,7 +1235,7 @@ Once the replay is complete.
 GET /kapacitor/v1/replays/ad95677b-096b-40c8-82a8-912706f41d4c
 ```
 
-```
+```json
 {
     "link" : {"rel": "self", "href": "/kapacitor/v1/replays/ad95677b-096b-40c8-82a8-912706f41d4c"},
     "id" : "ad95677b-096b-40c8-82a8-912706f41d4c",
@@ -1255,7 +1255,7 @@ Or if the replay fails.
 GET /kapacitor/v1/replays/ad95677b-096b-40c8-82a8-912706f41d4c
 ```
 
-```
+```json
 {
     "link" : {"rel": "self", "href": "/kapacitor/v1/replays/ad95677b-096b-40c8-82a8-912706f41d4c"},
     "id" : "ad95677b-096b-40c8-82a8-912706f41d4c",
@@ -1313,7 +1313,7 @@ GET /kapacitor/v1/replays
 
 ```json
 {
-    "replays" [
+    "replays": [
         {
             "link" : {"rel": "self", "href": "/kapacitor/v1/replays/ad95677b-096b-40c8-82a8-912706f41d4c"},
             "id" : "ad95677b-096b-40c8-82a8-912706f41d4c",

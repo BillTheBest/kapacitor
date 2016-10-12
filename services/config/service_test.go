@@ -2,6 +2,8 @@ package config_test
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -19,6 +21,13 @@ import (
 
 type SectionA struct {
 	Option1 string `toml:"option-1"`
+}
+
+func (a SectionA) Validate() error {
+	if a.Option1 == "invalid" {
+		return errors.New("invalid option-1")
+	}
+	return nil
 }
 
 type SectionB struct {
@@ -50,11 +59,21 @@ func OpenNewSerivce(testConfig interface{}, updates chan<- config.ConfigUpdate) 
 
 func TestService_UpdateSection(t *testing.T) {
 	testCases := []struct {
-		body    string
-		path    string
-		expName string
-		exp     interface{}
+		body       string
+		path       string
+		expName    string
+		expErr     error
+		exp        interface{}
+		updateErr  error
+		skipUpdate bool
 	}{
+		{
+			body:       `{"set":{"option-1":"invalid"}}`,
+			path:       "/section-a",
+			expName:    "section-a",
+			expErr:     errors.New("failed to override configuration section-a/: failed validation: invalid option-1"),
+			skipUpdate: true, //error is validation error, so update is never sent
+		},
 		{
 			body:    `{"set":{"option-1": "new-o1"}}`,
 			path:    "/section-a",
@@ -65,10 +84,60 @@ func TestService_UpdateSection(t *testing.T) {
 				},
 			},
 		},
+		{
+			body:    `{"add":{"name":"element0","option-3": 7}}`,
+			path:    "/section-c/",
+			expName: "section-c",
+			exp: []interface{}{
+				SectionC{
+					Name:    "element0",
+					Option3: 7,
+				},
+				SectionC{
+					Name:    "element1",
+					Option3: 3,
+				},
+			},
+		},
+		{
+			body:       `{"set":{"option-3": "bob"}}`,
+			path:       "/section-c/element1",
+			expName:    "section-c",
+			expErr:     errors.New("failed to override configuration section-c/element1: cannot set option option-3: cannot convert string \"bob\" into int"),
+			skipUpdate: true,
+		},
+		{
+			body:    `{"delete":["option-1"]}`,
+			path:    "/section-a",
+			expName: "section-a",
+			exp: []interface{}{
+				SectionA{
+					Option1: "o1",
+				},
+			},
+		},
+		{
+			body:    `{"set":{"option-2":"valid"}}`,
+			path:    "/section-b",
+			expName: "section-b",
+			expErr:  errors.New("failed to update configuration section-b/: failed to update service"),
+			exp: []interface{}{
+				SectionB{
+					Option2: "valid",
+				},
+			},
+			updateErr: errors.New("failed to update service"),
+		},
 	}
 	testConfig := &TestConfig{
 		SectionA: SectionA{
 			Option1: "o1",
+		},
+		SectionCs: []SectionC{
+			{
+				Name:    "element1",
+				Option3: 3,
+			},
 		},
 	}
 	updates := make(chan config.ConfigUpdate, len(testCases))
@@ -77,6 +146,27 @@ func TestService_UpdateSection(t *testing.T) {
 	defer service.Close()
 	basePath := server.Server.URL + httpd.BasePath + "/config"
 	for _, tc := range testCases {
+		if !tc.skipUpdate {
+			tc := tc
+			go func() {
+				// Validate we got the update over the chan
+				timer := time.NewTimer(10 * time.Millisecond)
+				defer timer.Stop()
+				select {
+				case cu := <-updates:
+					err := tc.updateErr
+					if !reflect.DeepEqual(cu.NewConfig, tc.exp) {
+						err = fmt.Errorf("unexpected new config: got %v exp %v", cu.NewConfig, tc.exp)
+					}
+					if got, exp := cu.Name, tc.expName; got != exp {
+						err = fmt.Errorf("unexpected config update Name: got %s exp %s", got, exp)
+					}
+					cu.ErrC <- err
+				case <-timer.C:
+					t.Fatal("expected to get config update")
+				}
+			}()
+		}
 		resp, err := http.Post(basePath+tc.path, "application/json", strings.NewReader(tc.body))
 		if err != nil {
 			t.Fatal(err)
@@ -88,24 +178,18 @@ func TestService_UpdateSection(t *testing.T) {
 		}
 
 		// Validate response
-		if got, exp := resp.StatusCode, http.StatusNoContent; got != exp {
-			t.Errorf("unexpected code: got %d exp %d.\nBody:\n%s", got, exp, string(body))
+		if tc.expErr != nil {
+			gotErr := struct {
+				Error string
+			}{}
+			json.Unmarshal(body, &gotErr)
+			if got, exp := gotErr.Error, tc.expErr.Error(); got != exp {
+				t.Fatalf("unexpected error:\ngot\n%q\nexp\n%q\n", got, exp)
+			}
+		} else if got, exp := resp.StatusCode, http.StatusNoContent; got != exp {
+			t.Fatalf("unexpected code: got %d exp %d.\nBody:\n%s", got, exp, string(body))
 		}
 
-		// Validate we got the update over the chan
-		timer := time.NewTimer(10 * time.Millisecond)
-		defer timer.Stop()
-		select {
-		case cu := <-updates:
-			if got, exp := cu.Name, tc.expName; got != exp {
-				t.Errorf("unexpected config update Name: got %s exp %s", got, exp)
-			}
-			if !reflect.DeepEqual(cu.NewConfig, tc.exp) {
-				t.Errorf("unexpected new config: got %v exp %v", cu.NewConfig, tc.exp)
-			}
-		case <-timer.C:
-			t.Fatal("expected to get config update")
-		}
 	}
 }
 
@@ -226,7 +310,7 @@ func TestService_GetConfig(t *testing.T) {
 				},
 				{
 					Path: "/section-a",
-					Body: `{"set":{"option-1":"deletd"},"delete":["option-1"]}`,
+					Body: `{"set":{"option-1":"deleted"},"delete":["option-1"]}`,
 				},
 			},
 			exp: map[string][]map[string]interface{}{
@@ -569,6 +653,18 @@ func TestService_GetConfig(t *testing.T) {
 		basePath := server.Server.URL + httpd.BasePath + "/config"
 		// Apply all updates
 		for _, update := range tc.updates {
+			go func() {
+				// Validate we got the update over the chan.
+				// This keeps the chan unblocked.
+				timer := time.NewTimer(10 * time.Millisecond)
+				defer timer.Stop()
+				select {
+				case cu := <-updates:
+					cu.ErrC <- nil
+				case <-timer.C:
+					t.Fatal("expected to get config update")
+				}
+			}()
 			resp, err := http.Post(basePath+update.Path, "application/json", strings.NewReader(update.Body))
 			if err != nil {
 				t.Fatal(err)
@@ -580,17 +676,6 @@ func TestService_GetConfig(t *testing.T) {
 			}
 			if got, exp := resp.StatusCode, http.StatusNoContent; got != exp {
 				t.Fatalf("update failed: got: %d exp: %d\nBody:\n%s", got, exp, string(body))
-			}
-
-			// Validate we got the update over the chan.
-			// This keeps the chan unblocked.
-			timer := time.NewTimer(10 * time.Millisecond)
-			defer timer.Stop()
-			select {
-			case <-updates:
-				// We got it, nothing more to do.
-			case <-timer.C:
-				t.Fatal("expected to get config update")
 			}
 		}
 

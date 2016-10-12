@@ -160,8 +160,8 @@ func (c *Overrider) Override(o Override) (Element, error) {
 	if err != nil {
 		return Element{}, errors.Wrap(err, "failed to copy configuration object")
 	}
-
-	return c.applyOverride(copy, o)
+	e, err := c.applyOverride(copy, o)
+	return e, errors.Wrapf(err, "failed to override %s/%s", o.Section, o.Element)
 }
 
 // applyOverride applies the given override to the specified object.
@@ -176,7 +176,7 @@ func (c *Overrider) applyOverride(object interface{}, o Override) (Element, erro
 
 	// walk the copy and apply the updates
 	if err := reflectwalk.Walk(object, walker); err != nil {
-		return Element{}, errors.Wrapf(err, "failed to apply changes to configuration object for section %s", o.Section)
+		return Element{}, err
 	}
 	unused := walker.unused()
 	if len(unused) > 0 {
@@ -251,7 +251,7 @@ func (c *Overrider) OverrideAll(os []Override) (map[string]Section, error) {
 		// We do not need to keep a reference to the section since we are going to walk the entire copy next
 		_, err := c.applyOverride(copy, o)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to override configuration section/element %s/%s", o.Section, o.Element)
+			return nil, errors.Wrapf(err, "failed to override configuration %s/%s", o.Section, o.Element)
 		}
 	}
 
