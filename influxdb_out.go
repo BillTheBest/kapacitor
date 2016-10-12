@@ -274,6 +274,9 @@ func (w *writeBuffer) write(bp influxdb.BatchPoints) error {
 		var err error
 		if w.conn == nil {
 			w.conn, err = w.i.et.tm.InfluxDBService.NewNamedClient(w.i.i.Cluster)
+			if err != nil {
+				return err
+			}
 		}
 		err = w.conn.Write(bp)
 		if err != nil {
