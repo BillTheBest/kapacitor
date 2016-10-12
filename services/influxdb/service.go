@@ -171,6 +171,14 @@ func (s *Service) updateConfigs(configs []Config, shouldOpen bool) error {
 			s.defaultInfluxDB = c.Name
 		}
 	}
+	// If only one enabled cluster assume it is the default
+	if enabledCount == 1 {
+		for _, c := range configs {
+			if c.Enabled {
+				s.defaultInfluxDB = c.Name
+			}
+		}
+	}
 	if enabledCount > 0 && s.defaultInfluxDB == "" {
 		return errors.New("no default cluster found")
 	}
@@ -256,11 +264,11 @@ func (s *Service) Close() error {
 	return lastErr
 }
 
-func (s *Service) NewDefaultClient() (influxdb.Client, error) {
-	return s.clusters[s.defaultInfluxDB].NewClient()
-}
-
+// NewNamedClient returns a new client for the given name or the default client if the name is empty.
 func (s *Service) NewNamedClient(name string) (influxdb.Client, error) {
+	if name == "" {
+		name = s.defaultInfluxDB
+	}
 	cluster, ok := s.clusters[name]
 	if !ok {
 		return nil, fmt.Errorf("no such InfluxDB config %s", name)

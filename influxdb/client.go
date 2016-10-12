@@ -74,6 +74,9 @@ type HTTPConfig struct {
 	// TLSConfig allows the user to set their own TLS config for the HTTP
 	// Client. If set, this option overrides InsecureSkipVerify.
 	TLSConfig *tls.Config
+
+	// Expire this client, something has changed.
+	Expire *sync.Cond
 }
 
 // AuthenticationMethod defines the type of authentication used.
@@ -111,6 +114,9 @@ type HTTPClient struct {
 	credentials *Credentials
 	httpClient  *http.Client
 	transport   *http.Transport
+	expire      *sync.Cond
+	expireMu    sync.RWMutex
+	expired     bool
 }
 
 // NewHTTPClient returns a new Client from the provided config.
@@ -137,7 +143,7 @@ func NewHTTPClient(conf HTTPConfig) (*HTTPClient, error) {
 	if conf.TLSConfig != nil {
 		tr.TLSClientConfig = conf.TLSConfig
 	}
-	return &HTTPClient{
+	c := &HTTPClient{
 		url:         *u,
 		userAgent:   conf.UserAgent,
 		credentials: conf.Credentials,
@@ -145,8 +151,22 @@ func NewHTTPClient(conf HTTPConfig) (*HTTPClient, error) {
 			Timeout:   conf.Timeout,
 			Transport: tr,
 		},
+		expire:    conf.Expire,
 		transport: tr,
-	}, nil
+	}
+	go c.waitExpire()
+	return c, nil
+}
+
+func (c *HTTPClient) waitExpire() {
+	if c.expire == nil {
+		return
+	}
+	c.expire.L.Lock()
+	c.expire.Wait()
+	c.expireMu.Lock()
+	defer c.expireMu.Unlock()
+	c.expired = true
 }
 
 func (c *HTTPClient) setAuth(req *http.Request) error {
@@ -167,7 +187,27 @@ func (c *HTTPClient) setAuth(req *http.Request) error {
 	return nil
 }
 
+func (c *HTTPClient) checkExpired() bool {
+	c.expireMu.RLock()
+	defer c.expireMu.RUnlock()
+	return c.expired
+}
+
+type expiredError struct{}
+
+func (expiredError) Error() string {
+	return "client has expired"
+}
+
+// Temporary returns whether this error was temporary and should be retried.
+func (expiredError) Temporary() bool {
+	return true
+}
+
 func (c *HTTPClient) do(req *http.Request, result interface{}, codes ...int) (*http.Response, error) {
+	if c.checkExpired() {
+		return nil, expiredError{}
+	}
 	req.Header.Set("User-Agent", c.userAgent)
 	err := c.setAuth(req)
 	if err != nil {

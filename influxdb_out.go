@@ -55,16 +55,12 @@ func (i *InfluxDBOutNode) runOut([]byte) error {
 
 	// Create the database and retention policy
 	if i.i.CreateFlag {
-		var err error
-		var conn influxdb.Client
-		if i.i.Cluster != "" {
-			conn, err = i.et.tm.InfluxDBService.NewNamedClient(i.i.Cluster)
-		} else {
-			conn, err = i.et.tm.InfluxDBService.NewDefaultClient()
-		}
-		if err != nil {
-			i.logger.Printf("E! failed to connect to InfluxDB cluster %q to create database", i.i.Cluster)
-		} else {
+		err := DoWhileTemporary(func() error {
+			conn, err := i.et.tm.InfluxDBService.NewNamedClient(i.i.Cluster)
+			if err != nil {
+				return err
+			}
+			defer conn.Close()
 			var createDb bytes.Buffer
 			createDb.WriteString("CREATE DATABASE ")
 			createDb.WriteString(influxql.QuoteIdent(i.i.Database))
@@ -74,11 +70,14 @@ func (i *InfluxDBOutNode) runOut([]byte) error {
 			}
 			resp, err := conn.Query(influxdb.Query{Command: createDb.String()})
 			if err != nil {
-				i.logger.Printf("E! failed to create database %q on cluster %q: %v", i.i.Database, i.i.Cluster, err)
-			} else if resp.Err != "" {
-				i.logger.Printf("E! failed to create database %q on cluster %q: %s", i.i.Database, i.i.Cluster, resp.Err)
+				return err
+			} else if err := resp.Error(); err != nil {
+				return err
 			}
-			conn.Close()
+			return nil
+		})
+		if err != nil {
+			i.logger.Printf("E! failed to create database %q on cluster %q: %v", i.i.Database, i.i.Cluster, err)
 		}
 	}
 
@@ -271,19 +270,17 @@ func (w *writeBuffer) writeAll() {
 }
 
 func (w *writeBuffer) write(bp influxdb.BatchPoints) error {
-	var err error
-	if w.conn == nil {
-		if w.i.i.Cluster != "" {
+	err := DoWhileTemporary(func() error {
+		var err error
+		if w.conn == nil {
 			w.conn, err = w.i.et.tm.InfluxDBService.NewNamedClient(w.i.i.Cluster)
-		} else {
-			w.conn, err = w.i.et.tm.InfluxDBService.NewDefaultClient()
 		}
+		err = w.conn.Write(bp)
 		if err != nil {
-			w.i.writeErrors.Add(1)
-			return err
+			w.conn = nil
 		}
-	}
-	err = w.conn.Write(bp)
+		return err
+	})
 	if err != nil {
 		w.i.writeErrors.Add(1)
 		return err

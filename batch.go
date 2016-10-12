@@ -2,7 +2,6 @@ package kapacitor
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"log"
 	"sync"
@@ -14,6 +13,7 @@ import (
 	"github.com/influxdata/kapacitor/influxdb"
 	"github.com/influxdata/kapacitor/models"
 	"github.com/influxdata/kapacitor/pipeline"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -296,40 +296,40 @@ func (b *QueryNode) doQuery() error {
 
 			b.logger.Println("D! starting next batch query:", b.query.String())
 
-			var err error
-			if con == nil {
-				if b.b.Cluster != "" {
+			var resp *influxdb.Response
+			err := DoWhileTemporary(func() error {
+				var err error
+				if con == nil {
 					con, err = b.et.tm.InfluxDBService.NewNamedClient(b.b.Cluster)
-				} else {
-					con, err = b.et.tm.InfluxDBService.NewDefaultClient()
+					if err != nil {
+						b.connectErrors.Add(1)
+						// Ensure connection is nil
+						con = nil
+						return errors.Wrap(err, "failed to connect to InfluxDB")
+					}
 				}
+				q := influxdb.Query{
+					Command: b.query.String(),
+				}
+
+				// Execute query
+				resp, err = con.Query(q)
 				if err != nil {
-					b.logger.Println("E! failed to connect to InfluxDB:", err)
-					b.connectErrors.Add(1)
-					// Ensure connection is nil
+					b.queryErrors.Add(1)
+					// Get a new connection
 					con = nil
-					b.timer.Stop()
-					break
+					return errors.Wrap(err, "query failed")
 				}
-			}
-			q := influxdb.Query{
-				Command: b.query.String(),
-			}
-
-			// Execute query
-			resp, err := con.Query(q)
+				if err := resp.Error(); err != nil {
+					b.queryErrors.Add(1)
+					// Get a new connection
+					con = nil
+					return errors.Wrap(err, "query returned error response")
+				}
+				return nil
+			})
 			if err != nil {
-				b.logger.Println("E! query failed:", err)
-				b.queryErrors.Add(1)
-				// Get a new connection
-				con = nil
-				b.timer.Stop()
-				break
-			}
-
-			if err := resp.Error(); err != nil {
-				b.logger.Println("E! query returned error response:", err)
-				b.queryErrors.Add(1)
+				b.logger.Println("E!", err)
 				b.timer.Stop()
 				break
 			}

@@ -57,7 +57,6 @@ type TaskMaster struct {
 	UDFService UDFService
 
 	InfluxDBService interface {
-		NewDefaultClient() (influxdb.Client, error)
 		NewNamedClient(name string) (influxdb.Client, error)
 	}
 	SMTPService interface {
