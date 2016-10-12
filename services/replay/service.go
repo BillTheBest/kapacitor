@@ -70,7 +70,6 @@ type Service struct {
 		DelRoutes([]httpd.Route)
 	}
 	InfluxDBService interface {
-		NewDefaultClient() (influxdb.Client, error)
 		NewNamedClient(name string) (influxdb.Client, error)
 	}
 	TaskMasterLookup interface {
@@ -1337,11 +1336,6 @@ func (s *Service) startRecordBatch(t *kapacitor.Task, start, stop time.Time) ([]
 			// Connect to the cluster
 			var con influxdb.Client
 			var err error
-			if cluster != "" {
-				con, err = s.InfluxDBService.NewNamedClient(cluster)
-			} else {
-				con, err = s.InfluxDBService.NewDefaultClient()
-			}
 			if err != nil {
 				errors <- err
 				return
@@ -1351,12 +1345,28 @@ func (s *Service) startRecordBatch(t *kapacitor.Task, start, stop time.Time) ([]
 				query := influxdb.Query{
 					Command: q.String(),
 				}
-				resp, err := con.Query(query)
+				var resp *influxdb.Response
+				err := kapacitor.DoWhileTemporary(func() error {
+					var err error
+					if con == nil {
+						con, err = s.InfluxDBService.NewNamedClient(cluster)
+						if err != nil {
+							con = nil
+							return err
+						}
+					}
+					resp, err = con.Query(query)
+					if err != nil {
+						con = nil
+						return err
+					}
+					if err := resp.Error(); err != nil {
+						con = nil
+						return err
+					}
+					return nil
+				})
 				if err != nil {
-					errors <- err
-					return
-				}
-				if err := resp.Error(); err != nil {
 					errors <- err
 					return
 				}
@@ -1577,22 +1587,31 @@ func (s *Service) execQuery(q, cluster string) (kapacitor.DBRP, *influxdb.Respon
 	}
 	// Query InfluxDB
 	var con influxdb.Client
-	if cluster != "" {
-		con, err = s.InfluxDBService.NewNamedClient(cluster)
-	} else {
-		con, err = s.InfluxDBService.NewDefaultClient()
-	}
+	var resp *influxdb.Response
+	err = kapacitor.DoWhileTemporary(func() error {
+		var err error
+		if con == nil {
+			con, err = s.InfluxDBService.NewNamedClient(cluster)
+			if err != nil {
+				con = nil
+				return err
+			}
+		}
+		query := influxdb.Query{
+			Command: q,
+		}
+		resp, err = con.Query(query)
+		if err != nil {
+			con = nil
+			return err
+		}
+		if err := resp.Error(); err != nil {
+			con = nil
+			return err
+		}
+		return nil
+	})
 	if err != nil {
-		return dbrp, nil, err
-	}
-	query := influxdb.Query{
-		Command: q,
-	}
-	resp, err := con.Query(query)
-	if err != nil {
-		return dbrp, nil, err
-	}
-	if err := resp.Error(); err != nil {
 		return dbrp, nil, err
 	}
 	return dbrp, resp, nil
