@@ -162,8 +162,12 @@ func (c *HTTPClient) waitExpire() {
 	if c.expire == nil {
 		return
 	}
+	// Wait for condition
 	c.expire.L.Lock()
 	c.expire.Wait()
+	c.expire.L.Unlock()
+
+	// Set expired flag
 	c.expireMu.Lock()
 	defer c.expireMu.Unlock()
 	c.expired = true

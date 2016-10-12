@@ -181,17 +181,7 @@ func (c *Config) Validate() error {
 			numEnabled++
 		}
 	}
-	// Set default if it is the only one
-	if numEnabled == 1 {
-		for i, config := range c.InfluxDB {
-			if config.Enabled {
-				defaultInfluxDB = 0
-				c.InfluxDB[i].Default = true
-				break
-			}
-		}
-	}
-	if numEnabled > 0 && defaultInfluxDB == -1 {
+	if numEnabled > 1 && defaultInfluxDB == -1 {
 		return errors.New("at least one of the enabled InfluxDB clusters must be marked as default.")
 	}
 

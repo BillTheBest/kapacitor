@@ -149,12 +149,14 @@ func New(c *Config, buildInfo BuildInfo, logService logging.Interface) (*Server,
 	}
 
 	// Append Kapacitor services.
-	s.appendUDFService()
-	s.appendDeadmanService()
-	s.appendSMTPService()
 	s.InitHTTPDService()
 	s.appendStorageService()
 	s.appendConfigOverrideService(c)
+
+	// Append all dynamic services after the config override service.
+	s.appendUDFService()
+	s.appendDeadmanService()
+	s.appendSMTPService()
 	s.appendAuthService()
 	if err := s.appendInfluxDBService(); err != nil {
 		return nil, errors.Wrap(err, "influxdb service")
@@ -237,7 +239,10 @@ func (s *Server) appendInfluxDBService() error {
 	if err != nil {
 		return errors.Wrap(err, "failed to get http port")
 	}
-	srv := influxdb.NewService(c, httpPort, s.config.Hostname, s.config.HTTP.AuthEnabled, l)
+	srv, err := influxdb.NewService(c, httpPort, s.config.Hostname, s.config.HTTP.AuthEnabled, l)
+	if err != nil {
+		return err
+	}
 	srv.HTTPDService = s.HTTPDService
 	srv.PointsWriter = s.TaskMaster
 	srv.LogService = s.LogService
@@ -498,26 +503,15 @@ func (s *Server) Err() <-chan error { return s.err }
 
 // Open opens all the services.
 func (s *Server) Open() error {
+
+	// Start profiling, if set.
+	s.startProfile(s.CPUProfile, s.MemProfile)
+
 	if err := s.startServices(); err != nil {
 		s.Close()
 		return err
 	}
-	if s.ConfigOverrideService != nil && !s.config.SkipConfigOverrides {
-		// Apply initial config updates
-		configs, err := s.ConfigOverrideService.Config()
-		if err != nil {
-			return errors.Wrap(err, "failed to apply config overrides")
-		}
-		for service, config := range configs {
-			if srv, ok := s.DynamicServices[service]; !ok {
-				return fmt.Errorf("found configuration override for unknown service %q", service)
-			} else {
-				if err := srv.Update(config); err != nil {
-					return errors.Wrapf(err, "failed to update configuration for service %s", service)
-				}
-			}
-		}
-	}
+
 	go s.watchServices()
 	go s.watchConfigUpdates()
 
@@ -525,14 +519,33 @@ func (s *Server) Open() error {
 }
 
 func (s *Server) startServices() error {
-	// Start profiling, if set.
-	s.startProfile(s.CPUProfile, s.MemProfile)
 	for _, service := range s.Services {
 		s.Logger.Printf("D! opening service: %T", service)
 		if err := service.Open(); err != nil {
 			return fmt.Errorf("open service %T: %s", service, err)
 		}
 		s.Logger.Printf("D! opened service: %T", service)
+
+		// Apply config overrides after the config override service has been opened and before any dynamic services.
+		if service == s.ConfigOverrideService && !s.config.SkipConfigOverrides {
+			// Apply initial config updates
+			s.Logger.Println("D! applying configuration overrides")
+			configs, err := s.ConfigOverrideService.Config()
+			if err != nil {
+				return errors.Wrap(err, "failed to apply config overrides")
+			}
+			for service, config := range configs {
+				if srv, ok := s.DynamicServices[service]; !ok {
+					return fmt.Errorf("found configuration override for unknown service %q", service)
+				} else {
+					s.Logger.Println("D! applying configuration overrides for", service)
+					if err := srv.Update(config); err != nil {
+						return errors.Wrapf(err, "failed to update configuration for service %s", service)
+					}
+				}
+			}
+		}
+
 	}
 	return nil
 }
