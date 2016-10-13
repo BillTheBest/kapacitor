@@ -67,6 +67,9 @@ func TestService_UpdateSection(t *testing.T) {
 		updateErr  error
 		skipUpdate bool
 	}{
+		// NOTE: These test cases all update the same underlying service,
+		// so changes from one effect the next.
+		// In other words the order of tests is important
 		{
 			body:       `{"set":{"option-1":"invalid"}}`,
 			path:       "/section-a",
@@ -127,6 +130,25 @@ func TestService_UpdateSection(t *testing.T) {
 				},
 			},
 			updateErr: errors.New("failed to update service"),
+		},
+		// Set unknown option
+		{
+			body:       `{"set":{"unknown": "value"}}`,
+			path:       "/section-a",
+			expName:    "section-a",
+			expErr:     errors.New("failed to override configuration section-a/: unknown options [unknown] in section section-a"),
+			skipUpdate: true,
+		},
+		// Validate unknown option was not persisted
+		{
+			body:    `{"set":{"option-1": "value"}}`,
+			path:    "/section-a",
+			expName: "section-a",
+			exp: []interface{}{
+				SectionA{
+					Option1: "value",
+				},
+			},
 		},
 	}
 	testConfig := &TestConfig{
