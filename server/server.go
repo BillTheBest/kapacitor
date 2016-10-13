@@ -32,6 +32,7 @@ import (
 	"github.com/influxdata/kapacitor/services/replay"
 	"github.com/influxdata/kapacitor/services/reporting"
 	"github.com/influxdata/kapacitor/services/sensu"
+	"github.com/influxdata/kapacitor/services/servicetest"
 	"github.com/influxdata/kapacitor/services/slack"
 	"github.com/influxdata/kapacitor/services/smtp"
 	"github.com/influxdata/kapacitor/services/stats"
@@ -77,6 +78,7 @@ type Server struct {
 	ReplayService         *replay.Service
 	InfluxDBService       *influxdb.Service
 	ConfigOverrideService *config.Service
+	TesterService         *servicetest.Service
 
 	MetaClient    *kapacitor.NoopMetaClient
 	QueryExecutor *Queryexecutor
@@ -152,6 +154,7 @@ func New(c *Config, buildInfo BuildInfo, logService logging.Interface) (*Server,
 	s.InitHTTPDService()
 	s.appendStorageService()
 	s.appendConfigOverrideService(c)
+	s.appendTesterService()
 
 	// Append all dynamic services after the config override service.
 	s.appendUDFService()
@@ -222,12 +225,22 @@ func (s *Server) appendConfigOverrideService(c *Config) {
 	}
 }
 
+func (s *Server) appendTesterService() {
+	l := s.LogService.NewLogger("[service-tests] ", log.LstdFlags)
+	srv := servicetest.NewService(servicetest.NewConfig(), l)
+	srv.HTTPDService = s.HTTPDService
+
+	s.TesterService = srv
+	s.AppendService("tests", srv)
+}
+
 func (s *Server) appendSMTPService() {
 	c := s.config.SMTP
 	l := s.LogService.NewLogger("[smtp] ", log.LstdFlags)
 	srv := smtp.NewService(c, l)
 
 	s.TaskMaster.SMTPService = srv
+	s.TesterService.AddTester("smtp", srv)
 	s.AppendService("smtp", srv)
 	s.DynamicServices["smtp"] = srv
 }
@@ -251,6 +264,7 @@ func (s *Server) appendInfluxDBService() error {
 
 	s.InfluxDBService = srv
 	s.TaskMaster.InfluxDBService = srv
+	s.TesterService.AddTester("influxdb", srv)
 	s.AppendService("influxdb", srv)
 	s.DynamicServices["influxdb"] = srv
 	return nil
@@ -328,6 +342,7 @@ func (s *Server) appendOpsGenieService() {
 	srv := opsgenie.NewService(c, l)
 	s.TaskMaster.OpsGenieService = srv
 
+	s.TesterService.AddTester("opsgenie", srv)
 	s.AppendService("opsgenie", srv)
 	s.DynamicServices["opsgenie"] = srv
 }
@@ -338,6 +353,7 @@ func (s *Server) appendVictorOpsService() {
 	srv := victorops.NewService(c, l)
 	s.TaskMaster.VictorOpsService = srv
 
+	s.TesterService.AddTester("victorops", srv)
 	s.AppendService("victorops", srv)
 	s.DynamicServices["victorops"] = srv
 }
@@ -349,6 +365,7 @@ func (s *Server) appendPagerDutyService() {
 	srv.HTTPDService = s.HTTPDService
 	s.TaskMaster.PagerDutyService = srv
 
+	s.TesterService.AddTester("pagerduty", srv)
 	s.AppendService("pagerduty", srv)
 	s.DynamicServices["pagerduty"] = srv
 }
@@ -359,6 +376,7 @@ func (s *Server) appendSensuService() {
 	srv := sensu.NewService(c, l)
 	s.TaskMaster.SensuService = srv
 
+	s.TesterService.AddTester("sensu", srv)
 	s.AppendService("sensu", srv)
 	s.DynamicServices["sensu"] = srv
 }
@@ -369,6 +387,7 @@ func (s *Server) appendSlackService() {
 	srv := slack.NewService(c, l)
 	s.TaskMaster.SlackService = srv
 
+	s.TesterService.AddTester("slack", srv)
 	s.AppendService("slack", srv)
 	s.DynamicServices["slack"] = srv
 }
@@ -379,6 +398,7 @@ func (s *Server) appendTelegramService() {
 	srv := telegram.NewService(c, l)
 	s.TaskMaster.TelegramService = srv
 
+	s.TesterService.AddTester("telegram", srv)
 	s.AppendService("telegram", srv)
 	s.DynamicServices["telegram"] = srv
 }
@@ -389,6 +409,7 @@ func (s *Server) appendHipChatService() {
 	srv := hipchat.NewService(c, l)
 	s.TaskMaster.HipChatService = srv
 
+	s.TesterService.AddTester("hipchat", srv)
 	s.AppendService("hipchat", srv)
 	s.DynamicServices["hipchat"] = srv
 }
@@ -399,6 +420,7 @@ func (s *Server) appendAlertaService() {
 	srv := alerta.NewService(c, l)
 	s.TaskMaster.AlertaService = srv
 
+	s.TesterService.AddTester("alerta", srv)
 	s.AppendService("alerta", srv)
 	s.DynamicServices["alerta"] = srv
 }
@@ -409,6 +431,7 @@ func (s *Server) appendTalkService() {
 	srv := talk.NewService(c, l)
 	s.TaskMaster.TalkService = srv
 
+	s.TesterService.AddTester("talk", srv)
 	s.AppendService("talk", srv)
 	s.DynamicServices["talk"] = srv
 }

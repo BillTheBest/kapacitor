@@ -34,6 +34,57 @@ func NewService(c Config, l *log.Logger) *Service {
 	}
 }
 
+type testOptions struct {
+	Resource    string   `json:"resource"`
+	Event       string   `json:"event"`
+	Environment string   `json:"environment"`
+	Severity    string   `json:"severity"`
+	Group       string   `json:"group"`
+	Value       string   `json:"value"`
+	Message     string   `json:"message"`
+	Origin      string   `json:"origin"`
+	Service     []string `json:"service"`
+}
+
+func (s *Service) TestOptions() interface{} {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return &testOptions{
+		Resource:    "testResource",
+		Event:       "testEvent",
+		Environment: s.environment,
+		Severity:    "critical",
+		Group:       "testGroup",
+		Value:       "testValue",
+		Message:     "test alerta message",
+		Origin:      s.origin,
+		Service:     []string{"testServiceA", "testServiceB"},
+	}
+}
+
+func (s *Service) Test(options interface{}) error {
+	o, ok := options.(*testOptions)
+	if !ok {
+		return fmt.Errorf("unexpected options type %T", options)
+	}
+	s.mu.RLock()
+	token := s.token
+	s.mu.RUnlock()
+	return s.Alert(
+		token,
+		o.Resource,
+		o.Event,
+		o.Environment,
+		o.Severity,
+		o.Group,
+		o.Value,
+		o.Message,
+		o.Origin,
+		o.Service,
+		nil,
+	)
+}
+
 func (s *Service) Open() error {
 	return nil
 }
@@ -92,10 +143,11 @@ func (s *Service) Alert(token, resource, event, environment, severity, group, va
 func (s *Service) preparePost(token, resource, event, environment, severity, group, value, message, origin string, service []string, data interface{}) (string, io.Reader, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	if !s.enabled {
+		return "", nil, errors.New("service is not enabled")
+	}
+
 	if token == "" {
-		if !s.enabled {
-			return "", nil, errors.New("service is not enabled")
-		}
 		token = s.token
 	}
 
