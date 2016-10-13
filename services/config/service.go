@@ -178,7 +178,7 @@ func (s *Service) handleUpdateSection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Apply sets/deletes to stored overrides
-	overrides, err := s.applyUpdateAction(ua)
+	overrides, saveFunc, err := s.overridesForUpdateAction(ua)
 	if err != nil {
 		httpd.HttpError(w, fmt.Sprint("failed to apply update:", err), true, http.StatusBadRequest)
 		return
@@ -191,6 +191,8 @@ func (s *Service) handleUpdateSection(w http.ResponseWriter, r *http.Request) {
 		httpd.HttpError(w, err.Error(), true, http.StatusBadRequest)
 		return
 	}
+
+	// collect element values
 	sectionList := make([]interface{}, len(newConfig[section]))
 	for i, s := range newConfig[section] {
 		sectionList[i] = s.Value()
@@ -211,6 +213,13 @@ func (s *Service) handleUpdateSection(w http.ResponseWriter, r *http.Request) {
 		httpd.HttpError(w, fmt.Sprintf("failed to update configuration %s/%s: %v", section, element, err), true, http.StatusInternalServerError)
 		return
 	}
+
+	// Save the result of the update
+	if err := saveFunc(); err != nil {
+		httpd.HttpError(w, err.Error(), true, http.StatusInternalServerError)
+		return
+	}
+
 	// Success
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -255,9 +264,11 @@ func (s *Service) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Service) applyUpdateAction(ua updateAction) ([]Override, error) {
+// overridesForUpdateAction produces a list of overrides relevant to the update action and
+// returns  save function. Call the save function to permanently store the result of the update.
+func (s *Service) overridesForUpdateAction(ua updateAction) ([]Override, func() error, error) {
 	if err := ua.Validate(); err != nil {
-		return nil, errors.Wrap(err, "invalid update action")
+		return nil, nil, errors.Wrap(err, "invalid update action")
 	}
 	section := ua.section
 	element := ua.element
@@ -266,14 +277,14 @@ func (s *Service) applyUpdateAction(ua updateAction) ([]Override, error) {
 		if len(ua.Add) > 0 {
 			key, ok := s.elementKeys[section]
 			if !ok {
-				return nil, fmt.Errorf("unknown section %q", section)
+				return nil, nil, fmt.Errorf("unknown section %q", section)
 			}
 			elementValue, ok := ua.Add[key]
 			if !ok {
-				return nil, fmt.Errorf("mising key %q in \"add\" map", key)
+				return nil, nil, fmt.Errorf("mising key %q in \"add\" map", key)
 			}
 			if str, ok := elementValue.(string); !ok {
-				return nil, fmt.Errorf("expected %q key to be a string, got %T", key, elementValue)
+				return nil, nil, fmt.Errorf("expected %q key to be a string, got %T", key, elementValue)
 			} else {
 				element = str
 			}
@@ -289,9 +300,9 @@ func (s *Service) applyUpdateAction(ua updateAction) ([]Override, error) {
 				Options: make(map[string]interface{}),
 			}
 		} else if err != nil {
-			return nil, errors.Wrapf(err, "failed to retrieve existing overrides for %s", id)
+			return nil, nil, errors.Wrapf(err, "failed to retrieve existing overrides for %s", id)
 		} else if err == nil && len(ua.Add) > 0 {
-			return nil, errors.Wrapf(err, "cannot add new override, override already exists for %s", id)
+			return nil, nil, errors.Wrapf(err, "cannot add new override, override already exists for %s", id)
 		}
 		if len(ua.Add) > 0 {
 			// Drop all previous options and only use the current set.
@@ -308,27 +319,46 @@ func (s *Service) applyUpdateAction(ua updateAction) ([]Override, error) {
 				delete(o.Options, k)
 			}
 		}
-
-		if err := s.overrides.Set(o); err != nil {
-			return nil, errors.Wrapf(err, "failed to retrieve existing overrides for %s", id)
+		saveFunc := func() error {
+			if err := s.overrides.Set(o); err != nil {
+				return errors.Wrapf(err, "failed to save override %s", o.ID)
+			}
+			return nil
 		}
-		return []Override{o}, nil
+
+		return []Override{o}, saveFunc, nil
 	} else {
 		// Remove the list of overrides
-		for _, r := range ua.Remove {
+		removed := make([]string, len(ua.Remove))
+		removeLookup := make(map[string]bool, len(ua.Remove))
+		for i, r := range ua.Remove {
 			id := sectionAndElementToID(section, r)
-			if err := s.overrides.Delete(id); err != nil {
-				return nil, errors.Wrapf(err, "failed to remove existing override %s", id)
-			}
+			removed[i] = id
+			removeLookup[id] = true
 		}
-		// Get remaining overrides for the section
+		// Get overrides for the section
 		overrides, err := s.overrides.List(section)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get existing overrides for section %s", ua.section)
+			return nil, nil, errors.Wrapf(err, "failed to get existing overrides for section %s", ua.section)
 		}
-		return overrides, nil
-	}
 
+		// Filter overrides
+		filtered := overrides[:0]
+		for _, o := range overrides {
+			if !removeLookup[o.ID] {
+				filtered = append(filtered, o)
+			}
+		}
+		saveFunc := func() error {
+			for _, id := range removed {
+				if err := s.overrides.Delete(id); err != nil {
+					return errors.Wrapf(err, "failed to remove existing override %s", id)
+				}
+			}
+			return nil
+		}
+		return filtered, saveFunc, nil
+	}
 }
 
 func convertOverrides(overrides []Override) []override.Override {
