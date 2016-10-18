@@ -150,18 +150,19 @@ func New(c *Config, buildInfo BuildInfo, logService logging.Interface) (*Server,
 	}
 
 	// Append Kapacitor services.
-	s.InitHTTPDService()
+	s.initHTTPDService()
 	s.appendStorageService()
-	s.appendConfigOverrideService(c)
-
-	// Append all dynamic services after the config override service.
+	s.appendAuthService()
 	s.appendUDFService()
 	s.appendDeadmanService()
-	s.appendSMTPService()
-	s.appendAuthService()
+
+	// Append config override service before any dynamic services
+	s.appendConfigOverrideService(c)
+
 	if err := s.appendInfluxDBService(); err != nil {
 		return nil, errors.Wrap(err, "influxdb service")
 	}
+	// Append these after InfluxDB because they depend on it
 	s.appendTaskStoreService()
 	s.appendReplayService()
 
@@ -170,17 +171,18 @@ func New(c *Config, buildInfo BuildInfo, logService logging.Interface) (*Server,
 	}
 
 	// Append Alert integration services
-	s.appendOpsGenieService()
-	s.appendVictorOpsService()
-	s.appendPagerDutyService()
-	s.appendTelegramService()
-	s.appendHipChatService()
 	s.appendAlertaService()
-	s.appendSlackService()
+	s.appendHipChatService()
+	s.appendOpsGenieService()
+	s.appendPagerDutyService()
+	s.appendSMTPService()
 	s.appendSensuService()
+	s.appendSlackService()
 	s.appendTalkService()
+	s.appendTelegramService()
+	s.appendVictorOpsService()
 
-	// Append InfluxDB input services
+	// Append extra input services
 	s.appendCollectdService()
 	s.appendUDPServices()
 	if err := s.appendOpenTSDBService(); err != nil {
@@ -261,7 +263,7 @@ func (s *Server) appendInfluxDBService() error {
 	return nil
 }
 
-func (s *Server) InitHTTPDService() {
+func (s *Server) initHTTPDService() {
 	l := s.LogService.NewLogger("[httpd] ", log.LstdFlags)
 	srv := httpd.NewService(s.config.HTTP, s.hostname, l, s.LogService)
 
