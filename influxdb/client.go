@@ -76,7 +76,7 @@ type HTTPConfig struct {
 	TLSConfig *tls.Config
 
 	// Expire this client, something has changed.
-	Expire *sync.Cond
+	Expire chan struct{}
 }
 
 // AuthenticationMethod defines the type of authentication used.
@@ -114,9 +114,8 @@ type HTTPClient struct {
 	credentials *Credentials
 	httpClient  *http.Client
 	transport   *http.Transport
-	expire      *sync.Cond
-	expireMu    sync.RWMutex
-	expired     bool
+	expire      chan struct{}
+	wg          sync.WaitGroup
 }
 
 // NewHTTPClient returns a new Client from the provided config.
@@ -154,23 +153,7 @@ func NewHTTPClient(conf HTTPConfig) (*HTTPClient, error) {
 		expire:    conf.Expire,
 		transport: tr,
 	}
-	go c.waitExpire()
 	return c, nil
-}
-
-func (c *HTTPClient) waitExpire() {
-	if c.expire == nil {
-		return
-	}
-	// Wait for condition
-	c.expire.L.Lock()
-	c.expire.Wait()
-	c.expire.L.Unlock()
-
-	// Set expired flag
-	c.expireMu.Lock()
-	defer c.expireMu.Unlock()
-	c.expired = true
 }
 
 func (c *HTTPClient) setAuth(req *http.Request) error {
@@ -192,9 +175,12 @@ func (c *HTTPClient) setAuth(req *http.Request) error {
 }
 
 func (c *HTTPClient) checkExpired() bool {
-	c.expireMu.RLock()
-	defer c.expireMu.RUnlock()
-	return c.expired
+	select {
+	case <-c.expire:
+		return true
+	default:
+		return false
+	}
 }
 
 type expiredError struct{}

@@ -77,6 +77,112 @@ func TestClient_Ping(t *testing.T) {
 	}
 }
 
+func TestClient_Expire(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var data Response
+		w.WriteHeader(http.StatusNoContent)
+		_ = json.NewEncoder(w).Encode(data)
+	}))
+	defer ts.Close()
+
+	expire := make(chan struct{})
+	config := HTTPConfig{
+		URL:    ts.URL,
+		Expire: expire,
+	}
+	c, _ := NewHTTPClient(config)
+	defer c.Close()
+
+	_, _, err := c.Ping(0)
+	if err != nil {
+		t.Errorf("unexpected error.  expected %v, actual %v", nil, err)
+	}
+	// Expire client
+	close(expire)
+
+	_, _, err = c.Ping(0)
+	if exp := "client has expired"; err == nil || err.Error() != exp {
+		t.Errorf("unexpected error.  expected %s, actual %v", exp, err)
+	}
+	type temp interface {
+		Temporary() bool
+	}
+	if tmp, ok := err.(temp); !ok {
+		t.Error("expected error to be a temporary type")
+	} else if !tmp.Temporary() {
+		t.Error("expected error to be temporary")
+	}
+}
+
+func TestClient_Close_Expire(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var data Response
+		w.WriteHeader(http.StatusNoContent)
+		_ = json.NewEncoder(w).Encode(data)
+	}))
+	defer ts.Close()
+
+	expire := make(chan struct{})
+	config := HTTPConfig{
+		URL:    ts.URL,
+		Expire: expire,
+	}
+	c, _ := NewHTTPClient(config)
+
+	_, _, err := c.Ping(0)
+	if err != nil {
+		t.Errorf("unexpected error.  expected %v, actual %v", nil, err)
+	}
+	// Expire client
+	close(expire)
+
+	closed := make(chan struct{})
+	go func() {
+		c.Close()
+		close(closed)
+	}()
+	timer := time.NewTimer(10 * time.Millisecond)
+	select {
+	case <-closed:
+		// All good
+	case <-timer.C:
+		t.Fatal("expected the client to close")
+	}
+}
+
+func TestClient_Close_NoExpire(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var data Response
+		w.WriteHeader(http.StatusNoContent)
+		_ = json.NewEncoder(w).Encode(data)
+	}))
+	defer ts.Close()
+
+	expire := make(chan struct{})
+	config := HTTPConfig{
+		URL:    ts.URL,
+		Expire: expire,
+	}
+	c, _ := NewHTTPClient(config)
+
+	_, _, err := c.Ping(0)
+	if err != nil {
+		t.Errorf("unexpected error.  expected %v, actual %v", nil, err)
+	}
+	closed := make(chan struct{})
+	go func() {
+		c.Close()
+		close(closed)
+	}()
+	timer := time.NewTimer(10 * time.Millisecond)
+	select {
+	case <-closed:
+		// All good
+	case <-timer.C:
+		t.Fatal("expected the client to close")
+	}
+}
+
 func TestClient_Concurrent_Use(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

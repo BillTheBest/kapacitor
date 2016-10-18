@@ -280,6 +280,7 @@ func (w *writeBuffer) write(bp influxdb.BatchPoints) error {
 		}
 		err = w.conn.Write(bp)
 		if err != nil {
+			w.conn.Close()
 			w.conn = nil
 		}
 		return err

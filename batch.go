@@ -317,12 +317,14 @@ func (b *QueryNode) doQuery() error {
 				if err != nil {
 					b.queryErrors.Add(1)
 					// Get a new connection
+					con.Close()
 					con = nil
 					return errors.Wrap(err, "query failed")
 				}
 				if err := resp.Error(); err != nil {
 					b.queryErrors.Add(1)
 					// Get a new connection
+					con.Close()
 					con = nil
 					return errors.Wrap(err, "query returned error response")
 				}
