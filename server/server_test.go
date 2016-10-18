@@ -2491,6 +2491,155 @@ func TestServer_BatchTask(t *testing.T) {
 		}
 	}
 }
+func TestServer_BatchTask_InfluxDBClientExpire(t *testing.T) {
+	c := NewConfig()
+	c.InfluxDB[0].Enabled = true
+	count := 0
+	stopTimeC := make(chan time.Time, 1)
+
+	badCount := 0
+
+	dbBad := NewInfluxDB(func(q string) *iclient.Response {
+		badCount++
+		// Return empty results
+		return &iclient.Response{
+			Results: []iclient.Result{},
+		}
+	})
+	defer dbBad.Close()
+	db := NewInfluxDB(func(q string) *iclient.Response {
+		stmt, err := influxql.ParseStatement(q)
+		if err != nil {
+			return &iclient.Response{Err: err.Error()}
+		}
+		slct, ok := stmt.(*influxql.SelectStatement)
+		if !ok {
+			return nil
+		}
+		cond, ok := slct.Condition.(*influxql.BinaryExpr)
+		if !ok {
+			return &iclient.Response{Err: "expected select condition to be binary expression"}
+		}
+		stopTimeExpr, ok := cond.RHS.(*influxql.BinaryExpr)
+		if !ok {
+			return &iclient.Response{Err: "expected select condition rhs to be binary expression"}
+		}
+		stopTL, ok := stopTimeExpr.RHS.(*influxql.StringLiteral)
+		if !ok {
+			return &iclient.Response{Err: "expected select condition rhs to be string literal"}
+		}
+		count++
+		switch count {
+		case 1:
+			stopTime, err := time.Parse(time.RFC3339Nano, stopTL.Val)
+			if err != nil {
+				return &iclient.Response{Err: err.Error()}
+			}
+			stopTimeC <- stopTime
+			return &iclient.Response{
+				Results: []iclient.Result{{
+					Series: []models.Row{{
+						Name:    "cpu",
+						Columns: []string{"time", "value"},
+						Values: [][]interface{}{
+							{
+								stopTime.Add(-2 * time.Millisecond).Format(time.RFC3339Nano),
+								1.0,
+							},
+							{
+								stopTime.Add(-1 * time.Millisecond).Format(time.RFC3339Nano),
+								1.0,
+							},
+						},
+					}},
+				}},
+			}
+		default:
+			return &iclient.Response{
+				Results: []iclient.Result{{
+					Series: []models.Row{{
+						Name:    "cpu",
+						Columns: []string{"time", "value"},
+						Values:  [][]interface{}{},
+					}},
+				}},
+			}
+		}
+	})
+	defer db.Close()
+	// Set bad URL first
+	c.InfluxDB[0].URLs = []string{dbBad.URL()}
+	s := OpenServer(c)
+	defer s.Close()
+	cli := Client(s)
+
+	id := "testBatchTask"
+	ttype := client.BatchTask
+	dbrps := []client.DBRP{{
+		Database:        "mydb",
+		RetentionPolicy: "myrp",
+	}}
+	tick := `batch
+    |query('SELECT value from mydb.myrp.cpu')
+        .period(5ms)
+        .every(5ms)
+        .align()
+    |count('value')
+    |where(lambda: "count" == 2)
+    |httpOut('count')
+`
+
+	task, err := cli.CreateTask(client.CreateTaskOptions{
+		ID:         id,
+		Type:       ttype,
+		DBRPs:      dbrps,
+		TICKscript: tick,
+		Status:     client.Disabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = cli.UpdateTask(task.Link, client.UpdateTaskOptions{
+		Status: client.Enabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Update InfluxDB config, while task is running
+	influxdbDefault := cli.ConfigElementLink("influxdb", "default")
+	if err := cli.ConfigUpdate(influxdbDefault, client.ConfigUpdateAction{
+		Set: map[string]interface{}{
+			"urls": []string{db.URL()},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	endpoint := fmt.Sprintf("%s/tasks/%s/count", s.URL(), id)
+	timeout := time.NewTicker(100 * time.Millisecond)
+	defer timeout.Stop()
+	select {
+	case <-timeout.C:
+		t.Fatal("timedout waiting for query")
+	case stopTime := <-stopTimeC:
+		exp := fmt.Sprintf(`{"series":[{"name":"cpu","columns":["time","count"],"values":[["%s",2]]}]}`, stopTime.Local().Format(time.RFC3339Nano))
+		err = s.HTTPGetRetry(endpoint, exp, 100, time.Millisecond*5)
+		if err != nil {
+			t.Error(err)
+		}
+		_, err = cli.UpdateTask(task.Link, client.UpdateTaskOptions{
+			Status: client.Disabled,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if badCount == 0 {
+		t.Error("expected bad influxdb to be queried at least once")
+	}
+}
 
 func TestServer_InvalidBatchTask(t *testing.T) {
 	c := NewConfig()

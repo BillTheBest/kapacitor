@@ -1,5 +1,7 @@
 package kapacitor
 
+import "github.com/pkg/errors"
+
 // temporary enables an error to indicate whether
 // it is temporary and safe for retrying.
 type temporary interface {
@@ -14,7 +16,7 @@ func DoWhileTemporary(f func() error) (err error) {
 		if err == nil {
 			return
 		}
-		temp = isTemporary(err)
+		temp = isTemporary(errors.Cause(err))
 	}
 	return
 }

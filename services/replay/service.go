@@ -1357,10 +1357,12 @@ func (s *Service) startRecordBatch(t *kapacitor.Task, start, stop time.Time) ([]
 					}
 					resp, err = con.Query(query)
 					if err != nil {
+						con.Close()
 						con = nil
 						return err
 					}
 					if err := resp.Error(); err != nil {
+						con.Close()
 						con = nil
 						return err
 					}
@@ -1602,10 +1604,12 @@ func (s *Service) execQuery(q, cluster string) (kapacitor.DBRP, *influxdb.Respon
 		}
 		resp, err = con.Query(query)
 		if err != nil {
+			con.Close()
 			con = nil
 			return err
 		}
 		if err := resp.Error(); err != nil {
+			con.Close()
 			con = nil
 			return err
 		}

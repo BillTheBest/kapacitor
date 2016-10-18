@@ -323,7 +323,7 @@ type influxdbCluster struct {
 	runningSubs              map[subEntry]bool
 	useTokens                bool
 
-	expire *sync.Cond
+	expireChan chan struct{}
 
 	clusterID     string
 	subName       string
@@ -402,13 +402,15 @@ func newInfluxDBCluster(c Config, hostname, clusterID, subName string, httpPort 
 		runningSubs:              make(map[subEntry]bool, len(c.Subscriptions)),
 		services:                 make(map[subEntry]openCloser, len(c.Subscriptions)),
 		// Do not use tokens for non http protocols
-		useTokens: useTokens && (c.SubscriptionProtocol == "http" || c.SubscriptionProtocol == "https"),
-		expire:    sync.NewCond(&sync.Mutex{}),
+		useTokens:  useTokens && (c.SubscriptionProtocol == "http" || c.SubscriptionProtocol == "https"),
+		expireChan: make(chan struct{}),
 	}
 }
 
-func (c *influxdbCluster) Expire() {
-	c.expire.Broadcast()
+// expire all clients, must have lock to call
+func (c *influxdbCluster) expire() {
+	close(c.expireChan)
+	c.expireChan = make(chan struct{})
 }
 
 func urlsFromConfig(c Config) []influxdb.HTTPConfig {
@@ -464,7 +466,7 @@ func (s *influxdbCluster) Close() error {
 		return nil
 	}
 	s.opened = false
-	s.Expire()
+	s.expire()
 
 	if s.subSyncTicker != nil {
 		s.subSyncTicker.Stop()
@@ -564,7 +566,7 @@ func (s *influxdbCluster) Update(c Config) error {
 		}
 	}
 
-	s.Expire()
+	s.expire()
 	return nil
 }
 
@@ -609,7 +611,7 @@ func (s *influxdbCluster) newClient() (c influxdb.Client, err error) {
 		s.i = (s.i + 1) % len(s.configs)
 
 		// Set expire condition
-		config.Expire = s.expire
+		config.Expire = s.expireChan
 
 		// Create new client
 		c, err = s.ClientCreator.Create(config)
