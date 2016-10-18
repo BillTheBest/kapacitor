@@ -4659,6 +4659,7 @@ func TestServer_UpdateConfig(t *testing.T) {
 			setDefaults: func(c *server.Config) {
 				c.InfluxDB[0].Username = "bob"
 				c.InfluxDB[0].Password = "secret"
+				c.InfluxDB[0].URLs = []string{"http://192.0.2.0:8086"}
 			},
 			expDefaultSection: client.ConfigSection{client.ConfigElement{
 				"default":                     false,
@@ -4681,7 +4682,7 @@ func TestServer_UpdateConfig(t *testing.T) {
 				"udp-bind":                    "",
 				"udp-buffer":                  float64(1e3),
 				"udp-read-buffer":             float64(0),
-				"urls":                        []interface{}{"http://localhost:8086"},
+				"urls":                        []interface{}{"http://192.0.2.0:8086"},
 				"username":                    "bob",
 			}},
 			expDefaultElement: client.ConfigElement{
@@ -4705,7 +4706,7 @@ func TestServer_UpdateConfig(t *testing.T) {
 				"udp-bind":                    "",
 				"udp-buffer":                  float64(1e3),
 				"udp-read-buffer":             float64(0),
-				"urls":                        []interface{}{"http://localhost:8086"},
+				"urls":                        []interface{}{"http://192.0.2.0:8086"},
 				"username":                    "bob",
 			},
 			updates: []updateAction{
@@ -4738,7 +4739,7 @@ func TestServer_UpdateConfig(t *testing.T) {
 						"udp-bind":                    "",
 						"udp-buffer":                  float64(1e3),
 						"udp-read-buffer":             float64(0),
-						"urls":                        []interface{}{"http://localhost:8086"},
+						"urls":                        []interface{}{"http://192.0.2.0:8086"},
 						"username":                    "bob",
 					}},
 					expElement: client.ConfigElement{
@@ -4762,7 +4763,7 @@ func TestServer_UpdateConfig(t *testing.T) {
 						"udp-bind":                    "",
 						"udp-buffer":                  float64(1e3),
 						"udp-read-buffer":             float64(0),
-						"urls":                        []interface{}{"http://localhost:8086"},
+						"urls":                        []interface{}{"http://192.0.2.0:8086"},
 						"username":                    "bob",
 					},
 				},
@@ -4794,7 +4795,7 @@ func TestServer_UpdateConfig(t *testing.T) {
 							"udp-bind":                    "",
 							"udp-buffer":                  float64(1e3),
 							"udp-read-buffer":             float64(0),
-							"urls":                        []interface{}{"http://localhost:8086"},
+							"urls":                        []interface{}{"http://192.0.2.0:8086"},
 							"username":                    "bob",
 						},
 						client.ConfigElement{
@@ -4818,7 +4819,7 @@ func TestServer_UpdateConfig(t *testing.T) {
 							"udp-bind":                    "",
 							"udp-buffer":                  float64(1e3),
 							"udp-read-buffer":             float64(0),
-							"urls":                        []interface{}{"http://localhost:8086"},
+							"urls":                        []interface{}{"http://192.0.2.0:8086"},
 							"username":                    "",
 						},
 					},
@@ -4844,7 +4845,7 @@ func TestServer_UpdateConfig(t *testing.T) {
 						"udp-bind":                    "",
 						"udp-buffer":                  float64(1e3),
 						"udp-read-buffer":             float64(0),
-						"urls":                        []interface{}{"http://localhost:8086"},
+						"urls":                        []interface{}{"http://192.0.2.0:8086"},
 						"username":                    "",
 					},
 				},
