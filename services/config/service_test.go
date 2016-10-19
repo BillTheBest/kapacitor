@@ -171,22 +171,15 @@ func TestService_UpdateSection(t *testing.T) {
 		if !tc.skipUpdate {
 			tc := tc
 			go func() {
-				// Validate we got the update over the chan
-				timer := time.NewTimer(10 * time.Millisecond)
-				defer timer.Stop()
-				select {
-				case cu := <-updates:
-					err := tc.updateErr
-					if !reflect.DeepEqual(cu.NewConfig, tc.exp) {
-						err = fmt.Errorf("unexpected new config: got %v exp %v", cu.NewConfig, tc.exp)
-					}
-					if got, exp := cu.Name, tc.expName; got != exp {
-						err = fmt.Errorf("unexpected config update Name: got %s exp %s", got, exp)
-					}
-					cu.ErrC <- err
-				case <-timer.C:
-					t.Fatal("expected to get config update")
+				cu := <-updates
+				err := tc.updateErr
+				if !reflect.DeepEqual(cu.NewConfig, tc.exp) {
+					err = fmt.Errorf("unexpected new config: got %v exp %v", cu.NewConfig, tc.exp)
 				}
+				if got, exp := cu.Name, tc.expName; got != exp {
+					err = fmt.Errorf("unexpected config update Name: got %s exp %s", got, exp)
+				}
+				cu.ErrC <- err
 			}()
 		}
 		resp, err := http.Post(basePath+tc.path, "application/json", strings.NewReader(tc.body))
@@ -194,6 +187,7 @@ func TestService_UpdateSection(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer resp.Body.Close()
+
 		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
 			t.Fatal(err)
