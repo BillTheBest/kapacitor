@@ -1427,34 +1427,38 @@ GET /kapacitor/v1/config
 
 ```json
 {
-    "influxdb": [
-        {
-            "name": "localhost",
-            "urls": ["http://localhost:8086"],
-            "default": true,
-            "username": "",
-            "password": false
-        },
-        {
-            "name": "remote",
-            "urls": ["http://influxdb.example.com:8086"],
-            "default": false,
-            "username": "jim",
-            "password": true
-        }
-    ],
-    "smtp": [{
-        "enabled": true,
-        "host": "smtp.example.com",
-        "port": 587,
-        "username": "bob",
-        "password": true,
-        "no-verify": false,
-        "global": false,
-        "to": [ "oncall@example.com"],
-        "from": "kapacitor@example.com",
-        "idle-timeout": "30s"
-    }]
+    "influxdb": {
+        "elements": [
+            {
+                "name": "localhost",
+                "urls": ["http://localhost:8086"],
+                "default": true,
+                "username": "",
+                "password": false
+            },
+            {
+                "name": "remote",
+                "urls": ["http://influxdb.example.com:8086"],
+                "default": false,
+                "username": "jim",
+                "password": true
+            }
+        ]
+    },
+    "smtp": {
+        "elements": [{
+            "enabled": true,
+            "host": "smtp.example.com",
+            "port": 587,
+            "username": "bob",
+            "password": true,
+            "no-verify": false,
+            "global": false,
+            "to": [ "oncall@example.com"],
+            "from": "kapacitor@example.com",
+            "idle-timeout": "30s"
+        }]
+    }
 }
 ```
 
@@ -1466,18 +1470,20 @@ GET /kapacitor/v1/config/smtp
 ```
 
 ```json
-[{
-    "enabled": true,
-    "host": "smtp.example.com",
-    "port": 587,
-    "username": "bob",
-    "password": true,
-    "no-verify": false,
-    "global": false,
-    "to": ["oncall@example.com"],
-    "from": "kapacitor@example.com",
-    "idle-timeout": "30s"
-}]
+{
+    "elements" : [{
+        "enabled": true,
+        "host": "smtp.example.com",
+        "port": 587,
+        "username": "bob",
+        "password": true,
+        "no-verify": false,
+        "global": false,
+        "to": ["oncall@example.com"],
+        "from": "kapacitor@example.com",
+        "idle-timeout": "30s"
+    }]
+}
 ```
 
 Retrieve only the InfluxDB section.
@@ -1487,22 +1493,24 @@ GET /kapacitor/v1/config/influxdb
 ```
 
 ```json
-[
-   {
-       "name": "localhost",
-       "urls": ["http://localhost:8086"],
-       "default": true,
-       "username": "",
-       "password": false
-   },
-   {
-       "name": "remote",
-       "urls": ["http://influxdb.example.com:8086"],
-       "default": false,
-       "username": "jim",
-       "password": true
-   }
-]
+{
+    "elements" : [
+       {
+           "name": "localhost",
+           "urls": ["http://localhost:8086"],
+           "default": true,
+           "username": "",
+           "password": false
+       },
+       {
+           "name": "remote",
+           "urls": ["http://influxdb.example.com:8086"],
+           "default": false,
+           "username": "jim",
+           "password": true
+       }
+    ]
+}
 ```
 
 Retrieve only the `remote` element of the InfluxDB section.
@@ -1536,12 +1544,12 @@ The request should contain a JSON object describing what should be modified.
 
 Use the following top level actions:
 
-| Key    | Description                                          |
-| ---    | -----------                                          |
-| set    | Set the value in the configuration overrides.        |
-| delete | Delete the value from the configuration overrides.   |
-| add    | Add a new element to a list configuration section.   |
-| remove | Remove an element from a list configuration section. |
+| Key    | Description                                                          |
+| ---    | -----------                                                          |
+| set    | Set the value in the configuration overrides.                        |
+| delete | Delete the value from the configuration overrides.                   |
+| add    | Add a new element to a list configuration section.                   |
+| remove | Remove a previously added element from a list configuration section. |
 
 Configuration options not specified in the request will be left unmodified.
 

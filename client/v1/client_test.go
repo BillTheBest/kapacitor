@@ -1977,40 +1977,43 @@ func Test_ConfigSections(t *testing.T) {
 	s, c, err := newClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/kapacitor/v1/config" && r.Method == "GET" {
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprintf(w, `
-{
-	"sectionA":[
-		{
-			"name": "A",
-			"optionA": "o1",
-			"optionB": "o2",
-			"optionC": "o3",
-			"optionD": "o4"
-		},
-		{
-			"name": "B",
-			"optionA": "o5",
-			"optionB": "o6",
-			"optionC": "o7",
-			"optionD": "o8"
-		}
-	],
-	"sectionB":[
-		{
-			"name": "X",
-			"optionA": "o1",
-			"optionB": "o2",
-			"optionC": "o3",
-			"optionD": "o4"
-		},
-		{
-			"name": "Y",
-			"optionH": "o5",
-			"optionJ": "o6",
-			"optionK": "o7",
-			"optionL": "o8"
-		}
-	]
+			fmt.Fprintf(w, `{
+	"sectionA": {
+		"elements": [
+			{
+				"name": "A",
+				"optionA": "o1",
+				"optionB": "o2",
+				"optionC": "o3",
+				"optionD": "o4"
+			},
+			{
+				"name": "B",
+				"optionA": "o5",
+				"optionB": "o6",
+				"optionC": "o7",
+				"optionD": "o8"
+			}
+		]
+	},
+	"sectionB": {
+		"elements" :[
+			{
+				"name": "X",
+				"optionA": "o1",
+				"optionB": "o2",
+				"optionC": "o3",
+				"optionD": "o4"
+			},
+			{
+				"name": "Y",
+				"optionH": "o5",
+				"optionJ": "o6",
+				"optionK": "o7",
+				"optionL": "o8"
+			}
+		]
+	}
 }`)
 		} else {
 			w.WriteHeader(http.StatusBadRequest)
@@ -2028,35 +2031,39 @@ func Test_ConfigSections(t *testing.T) {
 	}
 	exp := client.ConfigSections{
 		"sectionA": client.ConfigSection{
-			{
-				"name":    "A",
-				"optionA": "o1",
-				"optionB": "o2",
-				"optionC": "o3",
-				"optionD": "o4",
-			},
-			{
-				"name":    "B",
-				"optionA": "o5",
-				"optionB": "o6",
-				"optionC": "o7",
-				"optionD": "o8",
+			Elements: []client.ConfigElement{
+				{
+					"name":    "A",
+					"optionA": "o1",
+					"optionB": "o2",
+					"optionC": "o3",
+					"optionD": "o4",
+				},
+				{
+					"name":    "B",
+					"optionA": "o5",
+					"optionB": "o6",
+					"optionC": "o7",
+					"optionD": "o8",
+				},
 			},
 		},
 		"sectionB": client.ConfigSection{
-			{
-				"name":    "X",
-				"optionA": "o1",
-				"optionB": "o2",
-				"optionC": "o3",
-				"optionD": "o4",
-			},
-			{
-				"name":    "Y",
-				"optionH": "o5",
-				"optionJ": "o6",
-				"optionK": "o7",
-				"optionL": "o8",
+			Elements: []client.ConfigElement{
+				{
+					"name":    "X",
+					"optionA": "o1",
+					"optionB": "o2",
+					"optionC": "o3",
+					"optionD": "o4",
+				},
+				{
+					"name":    "Y",
+					"optionH": "o5",
+					"optionJ": "o6",
+					"optionK": "o7",
+					"optionL": "o8",
+				},
 			},
 		},
 	}
@@ -2069,23 +2076,24 @@ func Test_ConfigSection(t *testing.T) {
 	s, c, err := newClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/kapacitor/v1/config/section" && r.Method == "GET" {
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprintf(w, `
-[
-	{
-		"name": "A",
-		"optionA": "o1",
-		"optionB": "o2",
-		"optionC": "o3",
-		"optionD": "o4"
-	},
-	{
-		"name": "B",
-		"optionA": "o5",
-		"optionB": "o6",
-		"optionC": "o7",
-		"optionD": "o8"
-	}
-]`)
+			fmt.Fprintf(w, `{
+	"elements" : [
+		{
+			"name": "A",
+			"optionA": "o1",
+			"optionB": "o2",
+			"optionC": "o3",
+			"optionD": "o4"
+		},
+		{
+			"name": "B",
+			"optionA": "o5",
+			"optionB": "o6",
+			"optionC": "o7",
+			"optionD": "o8"
+		}
+	]
+}`)
 		} else {
 			w.WriteHeader(http.StatusBadRequest)
 			fmt.Fprintf(w, "request: %v", r)
@@ -2101,19 +2109,21 @@ func Test_ConfigSection(t *testing.T) {
 		t.Fatal(err)
 	}
 	exp := client.ConfigSection{
-		client.ConfigElement{
-			"name":    "A",
-			"optionA": "o1",
-			"optionB": "o2",
-			"optionC": "o3",
-			"optionD": "o4",
-		},
-		client.ConfigElement{
-			"name":    "B",
-			"optionA": "o5",
-			"optionB": "o6",
-			"optionC": "o7",
-			"optionD": "o8",
+		Elements: []client.ConfigElement{
+			{
+				"name":    "A",
+				"optionA": "o1",
+				"optionB": "o2",
+				"optionC": "o3",
+				"optionD": "o4",
+			},
+			{
+				"name":    "B",
+				"optionA": "o5",
+				"optionB": "o6",
+				"optionC": "o7",
+				"optionD": "o8",
+			},
 		},
 	}
 	if !reflect.DeepEqual(exp, section) {

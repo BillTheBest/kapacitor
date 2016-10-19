@@ -4813,30 +4813,32 @@ func TestServer_UpdateConfig(t *testing.T) {
 				c.InfluxDB[0].Password = "secret"
 				c.InfluxDB[0].URLs = []string{db.URL()}
 			},
-			expDefaultSection: client.ConfigSection{client.ConfigElement{
-				"default":                     false,
-				"disable-subscriptions":       false,
-				"enabled":                     false,
-				"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
-				"http-port":                   float64(0),
-				"insecure-skip-verify":        false,
-				"kapacitor-hostname":          "",
-				"name":                        "default",
-				"password":                    true,
-				"ssl-ca":                      "",
-				"ssl-cert":                    "",
-				"ssl-key":                     "",
-				"startup-timeout":             "5m0s",
-				"subscription-protocol":       "http",
-				"subscriptions":               nil,
-				"subscriptions-sync-interval": "1m0s",
-				"timeout":                     "0",
-				"udp-bind":                    "",
-				"udp-buffer":                  float64(1e3),
-				"udp-read-buffer":             float64(0),
-				"urls":                        []interface{}{db.URL()},
-				"username":                    "bob",
-			}},
+			expDefaultSection: client.ConfigSection{
+				Elements: []client.ConfigElement{{
+					"default":                     false,
+					"disable-subscriptions":       false,
+					"enabled":                     false,
+					"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
+					"http-port":                   float64(0),
+					"insecure-skip-verify":        false,
+					"kapacitor-hostname":          "",
+					"name":                        "default",
+					"password":                    true,
+					"ssl-ca":                      "",
+					"ssl-cert":                    "",
+					"ssl-key":                     "",
+					"startup-timeout":             "5m0s",
+					"subscription-protocol":       "http",
+					"subscriptions":               nil,
+					"subscriptions-sync-interval": "1m0s",
+					"timeout":                     "0",
+					"udp-bind":                    "",
+					"udp-buffer":                  float64(1e3),
+					"udp-read-buffer":             float64(0),
+					"urls":                        []interface{}{db.URL()},
+					"username":                    "bob",
+				}},
+			},
 			expDefaultElement: client.ConfigElement{
 				"default":                     false,
 				"disable-subscriptions":       false,
@@ -4870,30 +4872,32 @@ func TestServer_UpdateConfig(t *testing.T) {
 							"subscriptions":         map[string][]string{"_internal": []string{"monitor"}},
 						},
 					},
-					expSection: client.ConfigSection{client.ConfigElement{
-						"default":                     true,
-						"disable-subscriptions":       false,
-						"enabled":                     false,
-						"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
-						"http-port":                   float64(0),
-						"insecure-skip-verify":        false,
-						"kapacitor-hostname":          "",
-						"name":                        "default",
-						"password":                    true,
-						"ssl-ca":                      "",
-						"ssl-cert":                    "",
-						"ssl-key":                     "",
-						"startup-timeout":             "5m0s",
-						"subscription-protocol":       "https",
-						"subscriptions":               map[string]interface{}{"_internal": []interface{}{"monitor"}},
-						"subscriptions-sync-interval": "1m0s",
-						"timeout":                     "0",
-						"udp-bind":                    "",
-						"udp-buffer":                  float64(1e3),
-						"udp-read-buffer":             float64(0),
-						"urls":                        []interface{}{db.URL()},
-						"username":                    "bob",
-					}},
+					expSection: client.ConfigSection{
+						Elements: []client.ConfigElement{{
+							"default":                     true,
+							"disable-subscriptions":       false,
+							"enabled":                     false,
+							"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
+							"http-port":                   float64(0),
+							"insecure-skip-verify":        false,
+							"kapacitor-hostname":          "",
+							"name":                        "default",
+							"password":                    true,
+							"ssl-ca":                      "",
+							"ssl-cert":                    "",
+							"ssl-key":                     "",
+							"startup-timeout":             "5m0s",
+							"subscription-protocol":       "https",
+							"subscriptions":               map[string]interface{}{"_internal": []interface{}{"monitor"}},
+							"subscriptions-sync-interval": "1m0s",
+							"timeout":                     "0",
+							"udp-bind":                    "",
+							"udp-buffer":                  float64(1e3),
+							"udp-read-buffer":             float64(0),
+							"urls":                        []interface{}{db.URL()},
+							"username":                    "bob",
+						}},
+					},
 					expElement: client.ConfigElement{
 						"default":                     true,
 						"disable-subscriptions":       false,
@@ -4927,53 +4931,56 @@ func TestServer_UpdateConfig(t *testing.T) {
 						},
 					},
 					expSection: client.ConfigSection{
-						client.ConfigElement{
-							"default":                     true,
-							"disable-subscriptions":       false,
-							"enabled":                     false,
-							"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
-							"http-port":                   float64(0),
-							"insecure-skip-verify":        false,
-							"kapacitor-hostname":          "",
-							"name":                        "default",
-							"password":                    true,
-							"ssl-ca":                      "",
-							"ssl-cert":                    "",
-							"ssl-key":                     "",
-							"startup-timeout":             "5m0s",
-							"subscription-protocol":       "https",
-							"subscriptions":               map[string]interface{}{"_internal": []interface{}{"monitor"}},
-							"subscriptions-sync-interval": "1m0s",
-							"timeout":                     "0",
-							"udp-bind":                    "",
-							"udp-buffer":                  float64(1e3),
-							"udp-read-buffer":             float64(0),
-							"urls":                        []interface{}{db.URL()},
-							"username":                    "bob",
-						},
-						client.ConfigElement{
-							"default":                     false,
-							"disable-subscriptions":       false,
-							"enabled":                     true,
-							"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
-							"http-port":                   float64(0),
-							"insecure-skip-verify":        false,
-							"kapacitor-hostname":          "",
-							"name":                        "new",
-							"password":                    false,
-							"ssl-ca":                      "",
-							"ssl-cert":                    "",
-							"ssl-key":                     "",
-							"startup-timeout":             "5m0s",
-							"subscription-protocol":       "http",
-							"subscriptions":               nil,
-							"subscriptions-sync-interval": "1m0s",
-							"timeout":                     "0",
-							"udp-bind":                    "",
-							"udp-buffer":                  float64(1e3),
-							"udp-read-buffer":             float64(0),
-							"urls":                        []interface{}{db.URL()},
-							"username":                    "",
+
+						Elements: []client.ConfigElement{
+							{
+								"default":                     true,
+								"disable-subscriptions":       false,
+								"enabled":                     false,
+								"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
+								"http-port":                   float64(0),
+								"insecure-skip-verify":        false,
+								"kapacitor-hostname":          "",
+								"name":                        "default",
+								"password":                    true,
+								"ssl-ca":                      "",
+								"ssl-cert":                    "",
+								"ssl-key":                     "",
+								"startup-timeout":             "5m0s",
+								"subscription-protocol":       "https",
+								"subscriptions":               map[string]interface{}{"_internal": []interface{}{"monitor"}},
+								"subscriptions-sync-interval": "1m0s",
+								"timeout":                     "0",
+								"udp-bind":                    "",
+								"udp-buffer":                  float64(1e3),
+								"udp-read-buffer":             float64(0),
+								"urls":                        []interface{}{db.URL()},
+								"username":                    "bob",
+							},
+							{
+								"default":                     false,
+								"disable-subscriptions":       false,
+								"enabled":                     true,
+								"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
+								"http-port":                   float64(0),
+								"insecure-skip-verify":        false,
+								"kapacitor-hostname":          "",
+								"name":                        "new",
+								"password":                    false,
+								"ssl-ca":                      "",
+								"ssl-cert":                    "",
+								"ssl-key":                     "",
+								"startup-timeout":             "5m0s",
+								"subscription-protocol":       "http",
+								"subscriptions":               nil,
+								"subscriptions-sync-interval": "1m0s",
+								"timeout":                     "0",
+								"udp-bind":                    "",
+								"udp-buffer":                  float64(1e3),
+								"udp-read-buffer":             float64(0),
+								"urls":                        []interface{}{db.URL()},
+								"username":                    "",
+							},
 						},
 					},
 					element: "new",
@@ -5009,13 +5016,16 @@ func TestServer_UpdateConfig(t *testing.T) {
 			setDefaults: func(c *server.Config) {
 				c.Alerta.URL = "http://alerta.example.com"
 			},
-			expDefaultSection: client.ConfigSection{client.ConfigElement{
-				"enabled":     false,
-				"environment": "",
-				"origin":      "",
-				"token":       false,
-				"url":         "http://alerta.example.com",
-			}},
+			expDefaultSection: client.ConfigSection{
+
+				Elements: []client.ConfigElement{{
+					"enabled":     false,
+					"environment": "",
+					"origin":      "",
+					"token":       false,
+					"url":         "http://alerta.example.com",
+				}},
+			},
 			expDefaultElement: client.ConfigElement{
 				"enabled":     false,
 				"environment": "",
@@ -5031,13 +5041,15 @@ func TestServer_UpdateConfig(t *testing.T) {
 							"origin": "kapacitor",
 						},
 					},
-					expSection: client.ConfigSection{client.ConfigElement{
-						"enabled":     false,
-						"environment": "",
-						"origin":      "kapacitor",
-						"token":       true,
-						"url":         "http://alerta.example.com",
-					}},
+					expSection: client.ConfigSection{
+						Elements: []client.ConfigElement{{
+							"enabled":     false,
+							"environment": "",
+							"origin":      "kapacitor",
+							"token":       true,
+							"url":         "http://alerta.example.com",
+						}},
+					},
 					expElement: client.ConfigElement{
 						"enabled":     false,
 						"environment": "",
@@ -5053,14 +5065,16 @@ func TestServer_UpdateConfig(t *testing.T) {
 			setDefaults: func(c *server.Config) {
 				c.HipChat.URL = "http://hipchat.example.com"
 			},
-			expDefaultSection: client.ConfigSection{client.ConfigElement{
-				"enabled":            false,
-				"global":             false,
-				"room":               "",
-				"state-changes-only": false,
-				"token":              false,
-				"url":                "http://hipchat.example.com",
-			}},
+			expDefaultSection: client.ConfigSection{
+				Elements: []client.ConfigElement{{
+					"enabled":            false,
+					"global":             false,
+					"room":               "",
+					"state-changes-only": false,
+					"token":              false,
+					"url":                "http://hipchat.example.com",
+				}},
+			},
 			expDefaultElement: client.ConfigElement{
 				"enabled":            false,
 				"global":             false,
@@ -5077,14 +5091,16 @@ func TestServer_UpdateConfig(t *testing.T) {
 							"room":  "kapacitor",
 						},
 					},
-					expSection: client.ConfigSection{client.ConfigElement{
-						"enabled":            false,
-						"global":             false,
-						"room":               "kapacitor",
-						"state-changes-only": false,
-						"token":              true,
-						"url":                "http://hipchat.example.com",
-					}},
+					expSection: client.ConfigSection{
+						Elements: []client.ConfigElement{{
+							"enabled":            false,
+							"global":             false,
+							"room":               "kapacitor",
+							"state-changes-only": false,
+							"token":              true,
+							"url":                "http://hipchat.example.com",
+						}},
+					},
 					expElement: client.ConfigElement{
 						"enabled":            false,
 						"global":             false,
@@ -5101,15 +5117,17 @@ func TestServer_UpdateConfig(t *testing.T) {
 			setDefaults: func(c *server.Config) {
 				c.OpsGenie.URL = "http://opsgenie.example.com"
 			},
-			expDefaultSection: client.ConfigSection{client.ConfigElement{
-				"api-key":      false,
-				"enabled":      false,
-				"global":       false,
-				"recipients":   nil,
-				"recovery_url": opsgenie.DefaultOpsGenieRecoveryURL,
-				"teams":        nil,
-				"url":          "http://opsgenie.example.com",
-			}},
+			expDefaultSection: client.ConfigSection{
+				Elements: []client.ConfigElement{{
+					"api-key":      false,
+					"enabled":      false,
+					"global":       false,
+					"recipients":   nil,
+					"recovery_url": opsgenie.DefaultOpsGenieRecoveryURL,
+					"teams":        nil,
+					"url":          "http://opsgenie.example.com",
+				}},
+			},
 			expDefaultElement: client.ConfigElement{
 				"api-key":      false,
 				"enabled":      false,
@@ -5128,15 +5146,17 @@ func TestServer_UpdateConfig(t *testing.T) {
 							"teams":   []string{"teamA", "teamB"},
 						},
 					},
-					expSection: client.ConfigSection{client.ConfigElement{
-						"api-key":      true,
-						"enabled":      false,
-						"global":       true,
-						"recipients":   nil,
-						"recovery_url": opsgenie.DefaultOpsGenieRecoveryURL,
-						"teams":        []interface{}{"teamA", "teamB"},
-						"url":          "http://opsgenie.example.com",
-					}},
+					expSection: client.ConfigSection{
+						Elements: []client.ConfigElement{{
+							"api-key":      true,
+							"enabled":      false,
+							"global":       true,
+							"recipients":   nil,
+							"recovery_url": opsgenie.DefaultOpsGenieRecoveryURL,
+							"teams":        []interface{}{"teamA", "teamB"},
+							"url":          "http://opsgenie.example.com",
+						}},
+					},
 					expElement: client.ConfigElement{
 						"api-key":      true,
 						"enabled":      false,
@@ -5154,12 +5174,14 @@ func TestServer_UpdateConfig(t *testing.T) {
 			setDefaults: func(c *server.Config) {
 				c.PagerDuty.ServiceKey = "secret"
 			},
-			expDefaultSection: client.ConfigSection{client.ConfigElement{
-				"enabled":     false,
-				"global":      false,
-				"service-key": true,
-				"url":         pagerduty.DefaultPagerDutyAPIURL,
-			}},
+			expDefaultSection: client.ConfigSection{
+				Elements: []client.ConfigElement{{
+					"enabled":     false,
+					"global":      false,
+					"service-key": true,
+					"url":         pagerduty.DefaultPagerDutyAPIURL,
+				}},
+			},
 			expDefaultElement: client.ConfigElement{
 				"enabled":     false,
 				"global":      false,
@@ -5174,12 +5196,14 @@ func TestServer_UpdateConfig(t *testing.T) {
 							"enabled":     true,
 						},
 					},
-					expSection: client.ConfigSection{client.ConfigElement{
-						"enabled":     true,
-						"global":      false,
-						"service-key": false,
-						"url":         pagerduty.DefaultPagerDutyAPIURL,
-					}},
+					expSection: client.ConfigSection{
+						Elements: []client.ConfigElement{{
+							"enabled":     true,
+							"global":      false,
+							"service-key": false,
+							"url":         pagerduty.DefaultPagerDutyAPIURL,
+						}},
+					},
 					expElement: client.ConfigElement{
 						"enabled":     true,
 						"global":      false,
@@ -5194,19 +5218,21 @@ func TestServer_UpdateConfig(t *testing.T) {
 			setDefaults: func(c *server.Config) {
 				c.SMTP.Host = "smtp.example.com"
 			},
-			expDefaultSection: client.ConfigSection{client.ConfigElement{
-				"enabled":            false,
-				"from":               "",
-				"global":             false,
-				"host":               "smtp.example.com",
-				"idle-timeout":       "30s",
-				"no-verify":          false,
-				"password":           false,
-				"port":               float64(25),
-				"state-changes-only": false,
-				"to":                 nil,
-				"username":           "",
-			}},
+			expDefaultSection: client.ConfigSection{
+				Elements: []client.ConfigElement{{
+					"enabled":            false,
+					"from":               "",
+					"global":             false,
+					"host":               "smtp.example.com",
+					"idle-timeout":       "30s",
+					"no-verify":          false,
+					"password":           false,
+					"port":               float64(25),
+					"state-changes-only": false,
+					"to":                 nil,
+					"username":           "",
+				}},
+			},
 			expDefaultElement: client.ConfigElement{
 				"enabled":            false,
 				"from":               "",
@@ -5229,19 +5255,21 @@ func TestServer_UpdateConfig(t *testing.T) {
 							"password":     "secret",
 						},
 					},
-					expSection: client.ConfigSection{client.ConfigElement{
-						"enabled":            false,
-						"from":               "",
-						"global":             true,
-						"host":               "smtp.example.com",
-						"idle-timeout":       "1m0s",
-						"no-verify":          false,
-						"password":           true,
-						"port":               float64(25),
-						"state-changes-only": false,
-						"to":                 nil,
-						"username":           "",
-					}},
+					expSection: client.ConfigSection{
+						Elements: []client.ConfigElement{{
+							"enabled":            false,
+							"from":               "",
+							"global":             true,
+							"host":               "smtp.example.com",
+							"idle-timeout":       "1m0s",
+							"no-verify":          false,
+							"password":           true,
+							"port":               float64(25),
+							"state-changes-only": false,
+							"to":                 nil,
+							"username":           "",
+						}},
+					},
 					expElement: client.ConfigElement{
 						"enabled":            false,
 						"from":               "",
@@ -5263,11 +5291,13 @@ func TestServer_UpdateConfig(t *testing.T) {
 			setDefaults: func(c *server.Config) {
 				c.Sensu.Addr = "sensu.example.com:3000"
 			},
-			expDefaultSection: client.ConfigSection{client.ConfigElement{
-				"addr":    "sensu.example.com:3000",
-				"enabled": false,
-				"source":  "Kapacitor",
-			}},
+			expDefaultSection: client.ConfigSection{
+				Elements: []client.ConfigElement{{
+					"addr":    "sensu.example.com:3000",
+					"enabled": false,
+					"source":  "Kapacitor",
+				}},
+			},
 			expDefaultElement: client.ConfigElement{
 				"addr":    "sensu.example.com:3000",
 				"enabled": false,
@@ -5282,11 +5312,13 @@ func TestServer_UpdateConfig(t *testing.T) {
 							"source":  "",
 						},
 					},
-					expSection: client.ConfigSection{client.ConfigElement{
-						"addr":    "sensu.local:3000",
-						"enabled": true,
-						"source":  "",
-					}},
+					expSection: client.ConfigSection{
+						Elements: []client.ConfigElement{{
+							"addr":    "sensu.local:3000",
+							"enabled": true,
+							"source":  "",
+						}},
+					},
 					expElement: client.ConfigElement{
 						"addr":    "sensu.local:3000",
 						"enabled": true,
@@ -5300,13 +5332,15 @@ func TestServer_UpdateConfig(t *testing.T) {
 			setDefaults: func(c *server.Config) {
 				c.Slack.Global = true
 			},
-			expDefaultSection: client.ConfigSection{client.ConfigElement{
-				"channel":            "",
-				"enabled":            false,
-				"global":             true,
-				"state-changes-only": false,
-				"url":                false,
-			}},
+			expDefaultSection: client.ConfigSection{
+				Elements: []client.ConfigElement{{
+					"channel":            "",
+					"enabled":            false,
+					"global":             true,
+					"state-changes-only": false,
+					"url":                false,
+				}},
+			},
 			expDefaultElement: client.ConfigElement{
 				"channel":            "",
 				"enabled":            false,
@@ -5324,13 +5358,15 @@ func TestServer_UpdateConfig(t *testing.T) {
 							"url":     "http://slack.example.com/secret-token",
 						},
 					},
-					expSection: client.ConfigSection{client.ConfigElement{
-						"channel":            "#general",
-						"enabled":            true,
-						"global":             false,
-						"state-changes-only": false,
-						"url":                true,
-					}},
+					expSection: client.ConfigSection{
+						Elements: []client.ConfigElement{{
+							"channel":            "#general",
+							"enabled":            true,
+							"global":             false,
+							"state-changes-only": false,
+							"url":                true,
+						}},
+					},
 					expElement: client.ConfigElement{
 						"channel":            "#general",
 						"enabled":            true,
@@ -5346,11 +5382,13 @@ func TestServer_UpdateConfig(t *testing.T) {
 			setDefaults: func(c *server.Config) {
 				c.Talk.AuthorName = "Kapacitor"
 			},
-			expDefaultSection: client.ConfigSection{client.ConfigElement{
-				"enabled":     false,
-				"url":         false,
-				"author_name": "Kapacitor",
-			}},
+			expDefaultSection: client.ConfigSection{
+				Elements: []client.ConfigElement{{
+					"enabled":     false,
+					"url":         false,
+					"author_name": "Kapacitor",
+				}},
+			},
 			expDefaultElement: client.ConfigElement{
 				"enabled":     false,
 				"url":         false,
@@ -5364,11 +5402,13 @@ func TestServer_UpdateConfig(t *testing.T) {
 							"url":     "http://talk.example.com/secret-token",
 						},
 					},
-					expSection: client.ConfigSection{client.ConfigElement{
-						"enabled":     true,
-						"url":         true,
-						"author_name": "Kapacitor",
-					}},
+					expSection: client.ConfigSection{
+						Elements: []client.ConfigElement{{
+							"enabled":     true,
+							"url":         true,
+							"author_name": "Kapacitor",
+						}},
+					},
 					expElement: client.ConfigElement{
 						"enabled":     true,
 						"url":         true,
@@ -5382,17 +5422,19 @@ func TestServer_UpdateConfig(t *testing.T) {
 			setDefaults: func(c *server.Config) {
 				c.Telegram.ChatId = "kapacitor"
 			},
-			expDefaultSection: client.ConfigSection{client.ConfigElement{
-				"chat-id":                  "kapacitor",
-				"disable-notification":     false,
-				"disable-web-page-preview": false,
-				"enabled":                  false,
-				"global":                   false,
-				"parse-mode":               "",
-				"state-changes-only":       false,
-				"token":                    false,
-				"url":                      telegram.DefaultTelegramURL,
-			}},
+			expDefaultSection: client.ConfigSection{
+				Elements: []client.ConfigElement{{
+					"chat-id":                  "kapacitor",
+					"disable-notification":     false,
+					"disable-web-page-preview": false,
+					"enabled":                  false,
+					"global":                   false,
+					"parse-mode":               "",
+					"state-changes-only":       false,
+					"token":                    false,
+					"url":                      telegram.DefaultTelegramURL,
+				}},
+			},
 			expDefaultElement: client.ConfigElement{},
 			updates: []updateAction{
 				{
@@ -5402,17 +5444,19 @@ func TestServer_UpdateConfig(t *testing.T) {
 							"token":   "token",
 						},
 					},
-					expSection: client.ConfigSection{client.ConfigElement{
-						"chat-id":                  "kapacitor",
-						"disable-notification":     false,
-						"disable-web-page-preview": false,
-						"enabled":                  true,
-						"global":                   false,
-						"parse-mode":               "",
-						"state-changes-only":       false,
-						"token":                    true,
-						"url":                      telegram.DefaultTelegramURL,
-					}},
+					expSection: client.ConfigSection{
+						Elements: []client.ConfigElement{{
+							"chat-id":                  "kapacitor",
+							"disable-notification":     false,
+							"disable-web-page-preview": false,
+							"enabled":                  true,
+							"global":                   false,
+							"parse-mode":               "",
+							"state-changes-only":       false,
+							"token":                    true,
+							"url":                      telegram.DefaultTelegramURL,
+						}},
+					},
 					expElement: client.ConfigElement{
 						"chat-id":                  "kapacitor",
 						"disable-notification":     false,
@@ -5433,13 +5477,15 @@ func TestServer_UpdateConfig(t *testing.T) {
 				c.VictorOps.RoutingKey = "test"
 				c.VictorOps.APIKey = "secret"
 			},
-			expDefaultSection: client.ConfigSection{client.ConfigElement{
-				"api-key":     true,
-				"enabled":     false,
-				"global":      false,
-				"routing-key": "test",
-				"url":         victorops.DefaultVictorOpsAPIURL,
-			}},
+			expDefaultSection: client.ConfigSection{
+				Elements: []client.ConfigElement{{
+					"api-key":     true,
+					"enabled":     false,
+					"global":      false,
+					"routing-key": "test",
+					"url":         victorops.DefaultVictorOpsAPIURL,
+				}},
+			},
 			expDefaultElement: client.ConfigElement{
 				"api-key":     true,
 				"enabled":     false,
@@ -5455,13 +5501,15 @@ func TestServer_UpdateConfig(t *testing.T) {
 							"global":  true,
 						},
 					},
-					expSection: client.ConfigSection{client.ConfigElement{
-						"api-key":     false,
-						"enabled":     false,
-						"global":      true,
-						"routing-key": "test",
-						"url":         victorops.DefaultVictorOpsAPIURL,
-					}},
+					expSection: client.ConfigSection{
+						Elements: []client.ConfigElement{{
+							"api-key":     false,
+							"enabled":     false,
+							"global":      true,
+							"routing-key": "test",
+							"url":         victorops.DefaultVictorOpsAPIURL,
+						}},
+					},
 					expElement: client.ConfigElement{
 						"api-key":     false,
 						"enabled":     false,
@@ -5490,11 +5538,11 @@ func TestServer_UpdateConfig(t *testing.T) {
 		return nil
 	}
 	compareSections := func(got, exp client.ConfigSection) error {
-		if len(got) != len(exp) {
-			return fmt.Errorf("sections are different lengths, got %d exp %d", len(got), len(exp))
+		if len(got.Elements) != len(exp.Elements) {
+			return fmt.Errorf("sections are different lengths, got %d exp %d", len(got.Elements), len(exp.Elements))
 		}
-		for i := range exp {
-			if err := compareElements(got[i], exp[i]); err != nil {
+		for i := range exp.Elements {
+			if err := compareElements(got.Elements[i], exp.Elements[i]); err != nil {
 				return errors.Wrapf(err, "section element %d are not equal", i)
 			}
 		}

@@ -235,16 +235,16 @@ func (s *Service) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(config)
 	} else {
-		sectionList, ok := config[section]
+		sec, ok := config[section]
 		if !ok {
 			httpd.HttpError(w, fmt.Sprint("unknown section: ", section), true, http.StatusNotFound)
 			return
 		}
 		if element != "" {
-			var elementEntry map[string]interface{}
+			var elementEntry Element
 			// Find specified element
 			elementKey := s.elementKeys[section]
-			for _, options := range sectionList {
+			for _, options := range sec.Elements {
 				if options[elementKey] == element {
 					elementEntry = options
 					break
@@ -259,7 +259,7 @@ func (s *Service) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 			}
 		} else {
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(sectionList)
+			json.NewEncoder(w).Encode(sec)
 		}
 	}
 }
@@ -378,8 +378,14 @@ func convertOverrides(overrides []Override) []override.Override {
 	return os
 }
 
+type Sections map[string]Section
+type Section struct {
+	Elements []Element `json:"elements"`
+}
+type Element map[string]interface{}
+
 // getConfig returns a map of a fully resolved configuration object.
-func (s *Service) getConfig(section string) (map[string][]map[string]interface{}, error) {
+func (s *Service) getConfig(section string) (Sections, error) {
 	overrides, err := s.overrides.List(section)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to retrieve config overrides")
@@ -389,7 +395,7 @@ func (s *Service) getConfig(section string) (map[string][]map[string]interface{}
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to apply configuration overrides")
 	}
-	config := make(map[string][]map[string]interface{}, len(sections))
+	config := make(Sections, len(sections))
 	for name, sectionList := range sections {
 		if !strings.HasPrefix(name, section) {
 			// Skip sections we did not request
@@ -400,7 +406,9 @@ func (s *Service) getConfig(section string) (map[string][]map[string]interface{}
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to get redacted configuration data")
 			}
-			config[name] = append(config[name], redacted)
+			s := config[name]
+			s.Elements = append(s.Elements, Element(redacted))
+			config[name] = s
 		}
 	}
 	return config, nil

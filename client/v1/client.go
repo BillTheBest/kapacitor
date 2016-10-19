@@ -1547,7 +1547,9 @@ func (c *Client) ConfigUpdate(link Link, action ConfigUpdateAction) error {
 }
 
 type ConfigSections map[string]ConfigSection
-type ConfigSection []ConfigElement
+type ConfigSection struct {
+	Elements []ConfigElement `json:"elements"`
+}
 type ConfigElement map[string]interface{}
 
 // ConfigSections returns all the running configuration sections that can be modified.
@@ -1571,7 +1573,7 @@ func (c *Client) ConfigSections() (ConfigSections, error) {
 // ConfigSection returns the running configuration for a section.
 func (c *Client) ConfigSection(link Link) (ConfigSection, error) {
 	if link.Href == "" {
-		return nil, fmt.Errorf("invalid link %v", link)
+		return ConfigSection{}, fmt.Errorf("invalid link %v", link)
 	}
 
 	u := *c.url
@@ -1579,13 +1581,13 @@ func (c *Client) ConfigSection(link Link) (ConfigSection, error) {
 
 	req, err := http.NewRequest("GET", u.String(), nil)
 	if err != nil {
-		return nil, err
+		return ConfigSection{}, err
 	}
 
 	section := ConfigSection{}
 	_, err = c.Do(req, &section, http.StatusOK)
 	if err != nil {
-		return nil, err
+		return ConfigSection{}, err
 	}
 	return section, nil
 }
