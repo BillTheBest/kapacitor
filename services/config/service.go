@@ -28,10 +28,10 @@ type ConfigUpdate struct {
 }
 
 type Service struct {
-	overrider *override.Overrider
-	logger    *log.Logger
-	updates   chan<- ConfigUpdate
-	routes    []httpd.Route
+	config  interface{}
+	logger  *log.Logger
+	updates chan<- ConfigUpdate
+	routes  []httpd.Route
 
 	// Cached map of section name to element key name
 	elementKeys map[string]string
@@ -48,12 +48,10 @@ type Service struct {
 }
 
 func NewService(config interface{}, l *log.Logger, updates chan<- ConfigUpdate) *Service {
-	overrider := override.New(config)
-	overrider.OptionNameFunc = override.TomlFieldName
 	return &Service{
-		overrider: overrider,
-		logger:    l,
-		updates:   updates,
+		config:  config,
+		logger:  l,
+		updates: updates,
 	}
 }
 
@@ -65,7 +63,7 @@ func (s *Service) Open() error {
 	s.overrides = newOverrideKV(store)
 
 	// Cache element keys
-	if elementKeys, err := s.overrider.ElementKeys(); err != nil {
+	if elementKeys, err := override.ElementKeys(s.config); err != nil {
 		return errors.Wrap(err, "failed to determine the element keys")
 	} else {
 		s.elementKeys = elementKeys
@@ -186,7 +184,7 @@ func (s *Service) handleUpdateSection(w http.ResponseWriter, r *http.Request) {
 
 	// Apply overrides to config object
 	os := convertOverrides(overrides)
-	newConfig, err := s.overrider.OverrideAll(os)
+	newConfig, err := override.OverrideConfig(s.config, os)
 	if err != nil {
 		httpd.HttpError(w, err.Error(), true, http.StatusBadRequest)
 		return
@@ -391,7 +389,7 @@ func (s *Service) getConfig(section string) (Sections, error) {
 		return nil, errors.Wrap(err, "failed to retrieve config overrides")
 	}
 	os := convertOverrides(overrides)
-	sections, err := s.overrider.OverrideAll(os)
+	sections, err := override.OverrideConfig(s.config, os)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to apply configuration overrides")
 	}
@@ -420,7 +418,7 @@ func (s *Service) Config() (map[string][]interface{}, error) {
 		return nil, errors.Wrap(err, "failed to retrieve config overrides")
 	}
 	os := convertOverrides(overrides)
-	sections, err := s.overrider.OverrideAll(os)
+	sections, err := override.OverrideConfig(s.config, os)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to apply configuration overrides")
 	}

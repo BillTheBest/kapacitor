@@ -20,7 +20,7 @@ import (
 )
 
 type SectionA struct {
-	Option1 string `toml:"option-1"`
+	Option1 string `override:"option-1"`
 }
 
 func (a SectionA) Validate() error {
@@ -31,19 +31,19 @@ func (a SectionA) Validate() error {
 }
 
 type SectionB struct {
-	Option2  string `toml:"option-2"`
-	Password string `toml:"password" override:",redact"`
+	Option2  string `override:"option-2"`
+	Password string `override:"password,redact"`
 }
 
 type SectionC struct {
-	Name    string `toml:"name"`
-	Option3 int    `toml:"option-3"`
+	Name    string `override:"name"`
+	Option3 int    `override:"option-3"`
 }
 
 type TestConfig struct {
-	SectionA  SectionA   `toml:"section-a" override:"section-a"`
-	SectionB  SectionB   `toml:"section-b" override:"section-b"`
-	SectionCs []SectionC `toml:"section-c" override:"section-c,element-key=name"`
+	SectionA  SectionA   `override:"section-a"`
+	SectionB  SectionB   `override:"section-b"`
+	SectionCs []SectionC `override:"section-c,element-key=name"`
 }
 
 func OpenNewSerivce(testConfig interface{}, updates chan<- config.ConfigUpdate) (*config.Service, *httpdtest.Server) {

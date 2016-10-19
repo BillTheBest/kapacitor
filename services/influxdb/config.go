@@ -21,42 +21,42 @@ const (
 )
 
 type Config struct {
-	Enabled  bool     `toml:"enabled"`
-	Name     string   `toml:"name"`
-	Default  bool     `toml:"default"`
-	URLs     []string `toml:"urls"`
-	Username string   `toml:"username"`
-	Password string   `toml:"password" override:",redact"`
+	Enabled  bool     `toml:"enabled" override:"enabled"`
+	Name     string   `toml:"name" override:"name"`
+	Default  bool     `toml:"default" override:"default"`
+	URLs     []string `toml:"urls" override:"urls"`
+	Username string   `toml:"username" override:"username"`
+	Password string   `toml:"password" override:"password,redact"`
 	// Path to CA file
-	SSLCA string `toml:"ssl-ca"`
+	SSLCA string `toml:"ssl-ca" override:"ssl-ca"`
 	// Path to host cert file
-	SSLCert string `toml:"ssl-cert"`
+	SSLCert string `toml:"ssl-cert" override:"ssl-cert"`
 	// Path to cert key file
-	SSLKey string `toml:"ssl-key"`
+	SSLKey string `toml:"ssl-key" override:"ssl-key"`
 	// Use SSL but skip chain & host verification
-	InsecureSkipVerify bool `toml:"insecure-skip-verify"`
+	InsecureSkipVerify bool `toml:"insecure-skip-verify" override:"insecure-skip-verify"`
 
-	Timeout                  toml.Duration       `toml:"timeout"`
-	DisableSubscriptions     bool                `toml:"disable-subscriptions"`
-	SubscriptionProtocol     string              `toml:"subscription-protocol"`
-	Subscriptions            map[string][]string `toml:"subscriptions"`
-	ExcludedSubscriptions    map[string][]string `toml:"excluded-subscriptions"`
-	KapacitorHostname        string              `toml:"kapacitor-hostname"`
-	HTTPPort                 int                 `toml:"http-port"`
-	UDPBind                  string              `toml:"udp-bind"`
-	UDPBuffer                int                 `toml:"udp-buffer"`
-	UDPReadBuffer            int                 `toml:"udp-read-buffer"`
-	StartUpTimeout           toml.Duration       `toml:"startup-timeout"`
-	SubscriptionSyncInterval toml.Duration       `toml:"subscriptions-sync-interval"`
+	Timeout                  toml.Duration       `toml:"timeout" override:"timeout"`
+	DisableSubscriptions     bool                `toml:"disable-subscriptions" override:"disable-subscriptions"`
+	SubscriptionProtocol     string              `toml:"subscription-protocol" override:"subscription-protocol"`
+	Subscriptions            map[string][]string `toml:"subscriptions" override:"subscriptions"`
+	ExcludedSubscriptions    map[string][]string `toml:"excluded-subscriptions" override:"excluded-subscriptions"`
+	KapacitorHostname        string              `toml:"kapacitor-hostname" override:"kapacitor-hostname"`
+	HTTPPort                 int                 `toml:"http-port" override:"http-port"`
+	UDPBind                  string              `toml:"udp-bind" override:"udp-bind"`
+	UDPBuffer                int                 `toml:"udp-buffer" override:"udp-buffer"`
+	UDPReadBuffer            int                 `toml:"udp-read-buffer" override:"udp-read-buffer"`
+	StartUpTimeout           toml.Duration       `toml:"startup-timeout" override:"startup-timeout"`
+	SubscriptionSyncInterval toml.Duration       `toml:"subscriptions-sync-interval" override:"subscriptions-sync-interval"`
 }
 
 func NewConfig() Config {
 	c := &Config{}
-	c.SetDefaults()
+	c.Init()
 	return *c
 }
 
-func (c *Config) SetDefaults() {
+func (c *Config) Init() {
 	c.Enabled = true
 	c.Name = "default"
 	c.URLs = []string{"http://localhost:8086"}
