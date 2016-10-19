@@ -77,7 +77,7 @@ func TestClient_Ping(t *testing.T) {
 	}
 }
 
-func TestClient_Expire(t *testing.T) {
+func TestClient_Quit(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var data Response
 		w.WriteHeader(http.StatusNoContent)
@@ -85,10 +85,10 @@ func TestClient_Expire(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	expire := make(chan struct{})
+	quit := make(chan struct{})
 	config := HTTPConfig{
-		URL:    ts.URL,
-		Expire: expire,
+		URL:  ts.URL,
+		Quit: quit,
 	}
 	c, _ := NewHTTPClient(config)
 	defer c.Close()
@@ -97,11 +97,11 @@ func TestClient_Expire(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error.  expected %v, actual %v", nil, err)
 	}
-	// Expire client
-	close(expire)
+	// Quit client
+	close(quit)
 
 	_, _, err = c.Ping(0)
-	if exp := "client has expired"; err == nil || err.Error() != exp {
+	if exp := "client has quitd"; err == nil || err.Error() != exp {
 		t.Errorf("unexpected error.  expected %s, actual %v", exp, err)
 	}
 	type temp interface {
@@ -114,7 +114,7 @@ func TestClient_Expire(t *testing.T) {
 	}
 }
 
-func TestClient_Close_Expire(t *testing.T) {
+func TestClient_Close_Quit(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var data Response
 		w.WriteHeader(http.StatusNoContent)
@@ -122,10 +122,10 @@ func TestClient_Close_Expire(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	expire := make(chan struct{})
+	quit := make(chan struct{})
 	config := HTTPConfig{
-		URL:    ts.URL,
-		Expire: expire,
+		URL:  ts.URL,
+		Quit: quit,
 	}
 	c, _ := NewHTTPClient(config)
 
@@ -133,8 +133,8 @@ func TestClient_Close_Expire(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error.  expected %v, actual %v", nil, err)
 	}
-	// Expire client
-	close(expire)
+	// Quit client
+	close(quit)
 
 	closed := make(chan struct{})
 	go func() {
@@ -150,7 +150,7 @@ func TestClient_Close_Expire(t *testing.T) {
 	}
 }
 
-func TestClient_Close_NoExpire(t *testing.T) {
+func TestClient_Close_NoQuit(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var data Response
 		w.WriteHeader(http.StatusNoContent)
@@ -158,10 +158,10 @@ func TestClient_Close_NoExpire(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	expire := make(chan struct{})
+	quit := make(chan struct{})
 	config := HTTPConfig{
-		URL:    ts.URL,
-		Expire: expire,
+		URL:  ts.URL,
+		Quit: quit,
 	}
 	c, _ := NewHTTPClient(config)
 

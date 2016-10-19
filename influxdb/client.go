@@ -75,8 +75,8 @@ type HTTPConfig struct {
 	// Client. If set, this option overrides InsecureSkipVerify.
 	TLSConfig *tls.Config
 
-	// Expire this client, something has changed.
-	Expire chan struct{}
+	// Quit this client, something has changed.
+	Quit <-chan struct{}
 }
 
 // AuthenticationMethod defines the type of authentication used.
@@ -114,7 +114,7 @@ type HTTPClient struct {
 	credentials *Credentials
 	httpClient  *http.Client
 	transport   *http.Transport
-	expire      chan struct{}
+	quit        <-chan struct{}
 	wg          sync.WaitGroup
 }
 
@@ -150,7 +150,7 @@ func NewHTTPClient(conf HTTPConfig) (*HTTPClient, error) {
 			Timeout:   conf.Timeout,
 			Transport: tr,
 		},
-		expire:    conf.Expire,
+		quit:      conf.Quit,
 		transport: tr,
 	}
 	return c, nil
@@ -174,29 +174,29 @@ func (c *HTTPClient) setAuth(req *http.Request) error {
 	return nil
 }
 
-func (c *HTTPClient) checkExpired() bool {
+func (c *HTTPClient) checkQuit() bool {
 	select {
-	case <-c.expire:
+	case <-c.quit:
 		return true
 	default:
 		return false
 	}
 }
 
-type expiredError struct{}
+type quitError struct{}
 
-func (expiredError) Error() string {
-	return "client has expired"
+func (quitError) Error() string {
+	return "client has quitd"
 }
 
 // Temporary returns whether this error was temporary and should be retried.
-func (expiredError) Temporary() bool {
+func (quitError) Temporary() bool {
 	return true
 }
 
 func (c *HTTPClient) do(req *http.Request, result interface{}, codes ...int) (*http.Response, error) {
-	if c.checkExpired() {
-		return nil, expiredError{}
+	if c.checkQuit() {
+		return nil, quitError{}
 	}
 	req.Header.Set("User-Agent", c.userAgent)
 	err := c.setAuth(req)
