@@ -8,28 +8,24 @@ import (
 	"log"
 	"net"
 	"regexp"
-	"sync"
+	"sync/atomic"
 
 	"github.com/influxdata/kapacitor"
 )
 
 type Service struct {
-	mu      sync.RWMutex
-	enabled bool
-	addr    string
-	source  string
-	logger  *log.Logger
+	config atomic.Value
+	logger *log.Logger
 }
 
 var validNamePattern = regexp.MustCompile(`^[\w\.-]+$`)
 
 func NewService(c Config, l *log.Logger) *Service {
-	return &Service{
-		enabled: c.Enabled,
-		addr:    c.Addr,
-		source:  c.Source,
-		logger:  l,
+	s := &Service{
+		logger: l,
 	}
+	s.config.Store(c)
+	return s
 }
 
 func (s *Service) Open() error {
@@ -39,6 +35,11 @@ func (s *Service) Open() error {
 func (s *Service) Close() error {
 	return nil
 }
+
+func (s *Service) loadConfig() Config {
+	return s.config.Load().(Config)
+}
+
 func (s *Service) Update(newConfig []interface{}) error {
 	if l := len(newConfig); l != 1 {
 		return fmt.Errorf("expected only one new config object, got %d", l)
@@ -46,11 +47,7 @@ func (s *Service) Update(newConfig []interface{}) error {
 	if c, ok := newConfig[0].(Config); !ok {
 		return fmt.Errorf("expected config object to be of type %T, got %T", c, newConfig[0])
 	} else {
-		s.mu.Lock()
-		s.enabled = c.Enabled
-		s.addr = c.Addr
-		s.source = c.Source
-		s.mu.Unlock()
+		s.config.Store(c)
 	}
 	return nil
 }
@@ -84,10 +81,10 @@ func (s *Service) Alert(name, output string, level kapacitor.AlertLevel) error {
 }
 
 func (s *Service) prepareData(name, output string, level kapacitor.AlertLevel) (*net.TCPAddr, map[string]interface{}, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
 
-	if !s.enabled {
+	c := s.loadConfig()
+
+	if !c.Enabled {
 		return nil, nil, errors.New("service is not enabled")
 	}
 
@@ -107,11 +104,11 @@ func (s *Service) prepareData(name, output string, level kapacitor.AlertLevel) (
 
 	postData := make(map[string]interface{})
 	postData["name"] = name
-	postData["source"] = s.source
+	postData["source"] = c.Source
 	postData["output"] = output
 	postData["status"] = status
 
-	addr, err := net.ResolveTCPAddr("tcp", s.addr)
+	addr, err := net.ResolveTCPAddr("tcp", c.Addr)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/gomail.v2"
@@ -14,50 +15,63 @@ import (
 var ErrNoRecipients = errors.New("not sending email, no recipients defined")
 
 type Service struct {
-	mu      sync.RWMutex
-	c       Config
-	mail    chan update
-	running bool
+	mu      sync.Mutex
+	config  atomic.Value
+	mail    chan *gomail.Message
+	updates chan bool
 	logger  *log.Logger
 	wg      sync.WaitGroup
-}
-
-type update struct {
-	newDialer bool
-	message   *gomail.Message
+	opened  bool
 }
 
 func NewService(c Config, l *log.Logger) *Service {
-	return &Service{
-		c:      c,
-		mail:   make(chan update),
-		logger: l,
+	s := &Service{
+		updates: make(chan bool),
+		logger:  l,
 	}
+	s.config.Store(c)
+	return s
 }
 
 func (s *Service) Open() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.opened {
+		return nil
+	}
+	s.opened = true
 
 	s.logger.Println("I! Starting SMTP service")
 
-	if !s.c.Enabled {
-		return nil
-	}
+	s.mail = make(chan *gomail.Message)
 
 	s.wg.Add(1)
-	go s.runMailer()
+	go func() {
+		defer s.wg.Done()
+		s.runMailer()
+	}()
+
 	return nil
 }
 
 func (s *Service) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if !s.opened {
+		return nil
+	}
+	s.opened = false
 
 	s.logger.Println("I! Closing SMTP service")
+
 	close(s.mail)
 	s.wg.Wait()
+
 	return nil
+}
+
+func (s *Service) loadConfig() Config {
+	return s.config.Load().(Config)
 }
 
 func (s *Service) Update(newConfig []interface{}) error {
@@ -67,54 +81,43 @@ func (s *Service) Update(newConfig []interface{}) error {
 	if c, ok := newConfig[0].(Config); !ok {
 		return fmt.Errorf("expected config object to be of type %T, got %T", c, newConfig[0])
 	} else {
+		s.config.Store(c)
 		s.mu.Lock()
-		previousEnabled := s.c.Enabled
-		s.c = c
-		// If we have not already started the runMailer goroutine start it now.
-		if !s.running && !previousEnabled && s.c.Enabled {
-			s.wg.Add(1)
-			go s.runMailer()
-			s.running = true
-		}
+		opened := s.opened
 		s.mu.Unlock()
-		if c.Enabled {
+		if opened {
 			// Signal to create new dialer
-			s.mail <- update{newDialer: true}
+			s.updates <- true
 		}
 	}
 	return nil
 }
 
 func (s *Service) Global() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.c.Global
+	c := s.loadConfig()
+	return c.Global
 }
 
 func (s *Service) StateChangesOnly() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.c.StateChangesOnly
+	c := s.loadConfig()
+	return c.StateChangesOnly
 }
 
 func (s *Service) dialer() (d *gomail.Dialer, idleTimeout time.Duration) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.c.Username == "" {
-		d = &gomail.Dialer{Host: s.c.Host, Port: s.c.Port}
+	c := s.loadConfig()
+	if c.Username == "" {
+		d = &gomail.Dialer{Host: c.Host, Port: c.Port}
 	} else {
-		d = gomail.NewPlainDialer(s.c.Host, s.c.Port, s.c.Username, s.c.Password)
+		d = gomail.NewPlainDialer(c.Host, c.Port, c.Username, c.Password)
 	}
-	if s.c.NoVerify {
+	if c.NoVerify {
 		d.TLSConfig = &tls.Config{InsecureSkipVerify: true}
 	}
-	idleTimeout = time.Duration(s.c.IdleTimeout)
+	idleTimeout = time.Duration(c.IdleTimeout)
 	return
 }
 
 func (s *Service) runMailer() {
-	defer s.wg.Done()
-
 	var idleTimeout time.Duration
 	var d *gomail.Dialer
 	d, idleTimeout = s.dialer()
@@ -122,26 +125,24 @@ func (s *Service) runMailer() {
 	var conn gomail.SendCloser
 	var err error
 	open := false
-	for {
+	done := false
+	for !done {
 		timer := time.NewTimer(idleTimeout)
 		select {
-		case u, ok := <-s.mail:
-			if !ok {
-				return
-			}
-			// Check for special nil message to update dialer
-			if u.newDialer {
-				// Close old connection
-				if conn != nil {
-					if err := conn.Close(); err != nil {
-						s.logger.Println("E! error closing connection to old SMTP server:", err)
-					}
-					conn = nil
+		case <-s.updates:
+			// Close old connection
+			if conn != nil {
+				if err := conn.Close(); err != nil {
+					s.logger.Println("E! error closing connection to old SMTP server:", err)
 				}
-				// Create new dialer
-				d, idleTimeout = s.dialer()
-				open = false
-				// Nothing more to do
+				conn = nil
+			}
+			// Create new dialer
+			d, idleTimeout = s.dialer()
+			open = false
+		case m, ok := <-s.mail:
+			if !ok {
+				done = true
 				break
 			}
 			if !open {
@@ -151,7 +152,7 @@ func (s *Service) runMailer() {
 				}
 				open = true
 			}
-			if err := gomail.Send(conn, u.message); err != nil {
+			if err := gomail.Send(conn, m); err != nil {
 				s.logger.Println("E!", err)
 			}
 		// Close the connection to the SMTP server if no email was sent in
@@ -173,24 +174,23 @@ func (s *Service) SendMail(to []string, subject, body string) error {
 	if err != nil {
 		return err
 	}
-	s.mail <- update{message: m}
+	s.mail <- m
 	return nil
 }
 
 func (s *Service) prepareMessge(to []string, subject, body string) (*gomail.Message, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if !s.c.Enabled {
+	c := s.loadConfig()
+	if !c.Enabled {
 		return nil, errors.New("service not enabled")
 	}
 	if len(to) == 0 {
-		to = s.c.To
+		to = c.To
 	}
 	if len(to) == 0 {
 		return nil, ErrNoRecipients
 	}
 	m := gomail.NewMessage()
-	m.SetHeader("From", s.c.From)
+	m.SetHeader("From", c.From)
 	m.SetHeader("To", to...)
 	m.SetHeader("Subject", subject)
 	m.SetBody("text/html", body)

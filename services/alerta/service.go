@@ -10,28 +10,21 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"sync"
+	"path"
+	"sync/atomic"
 )
 
 type Service struct {
-	mu          sync.RWMutex
-	enabled     bool
-	url         string
-	token       string
-	environment string
-	origin      string
-	logger      *log.Logger
+	config atomic.Value
+	logger *log.Logger
 }
 
 func NewService(c Config, l *log.Logger) *Service {
-	return &Service{
-		enabled:     c.Enabled,
-		url:         c.URL,
-		token:       c.Token,
-		environment: c.Environment,
-		origin:      c.Origin,
-		logger:      l,
+	s := &Service{
+		logger: l,
 	}
+	s.config.Store(c)
+	return s
 }
 
 func (s *Service) Open() error {
@@ -42,6 +35,10 @@ func (s *Service) Close() error {
 	return nil
 }
 
+func (s *Service) loadConfig() Config {
+	return s.config.Load().(Config)
+}
+
 func (s *Service) Update(newConfig []interface{}) error {
 	if l := len(newConfig); l != 1 {
 		return fmt.Errorf("expected only one new config object, got %d", l)
@@ -49,13 +46,7 @@ func (s *Service) Update(newConfig []interface{}) error {
 	if c, ok := newConfig[0].(Config); !ok {
 		return fmt.Errorf("expected config object to be of type %T, got %T", c, newConfig[0])
 	} else {
-		s.mu.Lock()
-		s.enabled = c.Enabled
-		s.url = c.URL
-		s.token = c.Token
-		s.environment = c.Environment
-		s.origin = c.Origin
-		s.mu.Unlock()
+		s.config.Store(c)
 	}
 	return nil
 }
@@ -90,28 +81,32 @@ func (s *Service) Alert(token, resource, event, environment, severity, group, va
 }
 
 func (s *Service) preparePost(token, resource, event, environment, severity, group, value, message, origin string, service []string, data interface{}) (string, io.Reader, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	c := s.loadConfig()
+
+	if !c.Enabled {
+		return "", nil, errors.New("service is not enabled")
+	}
+
 	if token == "" {
-		if !s.enabled {
-			return "", nil, errors.New("service is not enabled")
-		}
-		token = s.token
+		token = c.Token
 	}
 
 	if environment == "" {
-		environment = s.environment
+		environment = c.Environment
 	}
 
 	if origin == "" {
-		origin = s.origin
+		origin = c.Origin
 	}
 
-	var Url *url.URL
-	Url, err := url.Parse(s.url + "/alert?api-key=" + token)
+	u, err := url.Parse(c.URL)
 	if err != nil {
 		return "", nil, err
 	}
+	u.Path = path.Join(u.Path, "alert")
+	v := url.Values{}
+	v.Set("api-key", token)
+	u.RawQuery = v.Encode()
 
 	postData := make(map[string]interface{})
 	postData["resource"] = resource
@@ -134,5 +129,5 @@ func (s *Service) preparePost(token, resource, event, environment, severity, gro
 		return "", nil, err
 	}
 
-	return Url.String(), &post, nil
+	return u.String(), &post, nil
 }

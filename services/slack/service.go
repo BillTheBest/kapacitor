@@ -9,30 +9,22 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"sync"
+	"sync/atomic"
 
 	"github.com/influxdata/kapacitor"
 )
 
 type Service struct {
-	mu               sync.RWMutex
-	enabled          bool
-	channel          string
-	url              string
-	global           bool
-	stateChangesOnly bool
-	logger           *log.Logger
+	config atomic.Value
+	logger *log.Logger
 }
 
 func NewService(c Config, l *log.Logger) *Service {
-	return &Service{
-		enabled:          c.Enabled,
-		channel:          c.Channel,
-		url:              c.URL,
-		global:           c.Global,
-		stateChangesOnly: c.StateChangesOnly,
-		logger:           l,
+	s := &Service{
+		logger: l,
 	}
+	s.config.Store(c)
+	return s
 }
 
 func (s *Service) Open() error {
@@ -42,6 +34,11 @@ func (s *Service) Open() error {
 func (s *Service) Close() error {
 	return nil
 }
+
+func (s *Service) loadConfig() Config {
+	return s.config.Load().(Config)
+}
+
 func (s *Service) Update(newConfig []interface{}) error {
 	if l := len(newConfig); l != 1 {
 		return fmt.Errorf("expected only one new config object, got %d", l)
@@ -49,27 +46,19 @@ func (s *Service) Update(newConfig []interface{}) error {
 	if c, ok := newConfig[0].(Config); !ok {
 		return fmt.Errorf("expected config object to be of type %T, got %T", c, newConfig[0])
 	} else {
-		s.mu.Lock()
-		s.enabled = c.Enabled
-		s.channel = c.Channel
-		s.url = c.URL
-		s.global = c.Global
-		s.stateChangesOnly = c.StateChangesOnly
-		s.mu.Unlock()
+		s.config.Store(c)
 	}
 	return nil
 }
 
 func (s *Service) Global() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.global
+	c := s.loadConfig()
+	return c.Global
 }
 
 func (s *Service) StateChangesOnly() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.stateChangesOnly
+	c := s.loadConfig()
+	return c.StateChangesOnly
 }
 
 // slack attachment info
@@ -107,14 +96,13 @@ func (s *Service) Alert(channel, message string, level kapacitor.AlertLevel) err
 }
 
 func (s *Service) preparePost(channel, message string, level kapacitor.AlertLevel) (string, io.Reader, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	c := s.loadConfig()
 
-	if !s.enabled {
+	if !c.Enabled {
 		return "", nil, errors.New("service is not enabled")
 	}
 	if channel == "" {
-		channel = s.channel
+		channel = c.Channel
 	}
 	var color string
 	switch level {
@@ -143,5 +131,5 @@ func (s *Service) preparePost(channel, message string, level kapacitor.AlertLeve
 		return "", nil, err
 	}
 
-	return s.url, &post, nil
+	return c.URL, &post, nil
 }

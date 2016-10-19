@@ -10,32 +10,23 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"sync"
+	"path"
+	"sync/atomic"
 
 	"github.com/influxdata/kapacitor"
 )
 
 type Service struct {
-	mu               sync.RWMutex
-	enabled          bool
-	room             string
-	token            string
-	url              string
-	global           bool
-	stateChangesOnly bool
-	logger           *log.Logger
+	config atomic.Value
+	logger *log.Logger
 }
 
 func NewService(c Config, l *log.Logger) *Service {
-	return &Service{
-		enabled:          c.Enabled,
-		room:             c.Room,
-		token:            c.Token,
-		url:              c.URL,
-		global:           c.Global,
-		stateChangesOnly: c.StateChangesOnly,
-		logger:           l,
+	s := &Service{
+		logger: l,
 	}
+	s.config.Store(c)
+	return s
 }
 
 func (s *Service) Open() error {
@@ -46,6 +37,10 @@ func (s *Service) Close() error {
 	return nil
 }
 
+func (s *Service) loadConfig() Config {
+	return s.config.Load().(Config)
+}
+
 func (s *Service) Update(newConfig []interface{}) error {
 	if l := len(newConfig); l != 1 {
 		return fmt.Errorf("expected only one new config object, got %d", l)
@@ -53,28 +48,19 @@ func (s *Service) Update(newConfig []interface{}) error {
 	if c, ok := newConfig[0].(Config); !ok {
 		return fmt.Errorf("expected config object to be of type %T, got %T", c, newConfig[0])
 	} else {
-		s.mu.Lock()
-		s.enabled = c.Enabled
-		s.room = c.Room
-		s.token = c.Token
-		s.url = c.URL
-		s.global = c.Global
-		s.stateChangesOnly = c.StateChangesOnly
-		s.mu.Unlock()
+		s.config.Store(c)
 	}
 	return nil
 }
 
 func (s *Service) Global() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.global
+	c := s.loadConfig()
+	return c.Global
 }
 
 func (s *Service) StateChangesOnly() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.stateChangesOnly
+	c := s.loadConfig()
+	return c.StateChangesOnly
 }
 
 func (s *Service) Alert(room, token, message string, level kapacitor.AlertLevel) error {
@@ -106,25 +92,27 @@ func (s *Service) Alert(room, token, message string, level kapacitor.AlertLevel)
 }
 
 func (s *Service) preparePost(room, token, message string, level kapacitor.AlertLevel) (string, io.Reader, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	c := s.loadConfig()
 
-	if !s.enabled {
+	if !c.Enabled {
 		return "", nil, errors.New("service is not enabled")
 	}
-	//Generate HipChat API Url including room and authentication token
+	//Generate HipChat API URL including room and authentication token
 	if room == "" {
-		room = s.room
+		room = c.Room
 	}
 	if token == "" {
-		token = s.token
+		token = c.Token
 	}
 
-	var Url *url.URL
-	Url, err := url.Parse(s.url + "/" + room + "/notification?auth_token=" + token)
+	u, err := url.Parse(c.URL)
 	if err != nil {
 		return "", nil, err
 	}
+	u.Path = path.Join(u.Path, room, "notification")
+	v := url.Values{}
+	v.Set("auth_token", token)
+	u.RawQuery = v.Encode()
 
 	var color string
 	switch level {
@@ -148,5 +136,5 @@ func (s *Service) preparePost(room, token, message string, level kapacitor.Alert
 	if err != nil {
 		return "", nil, err
 	}
-	return Url.String(), &post, nil
+	return u.String(), &post, nil
 }

@@ -9,35 +9,23 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/influxdata/kapacitor"
 )
 
 type Service struct {
-	mu           sync.RWMutex
-	enabled      bool
-	apikey       string
-	teams        []string
-	recipients   []string
-	url          string
-	recovery_url string
-	global       bool
-	logger       *log.Logger
+	config atomic.Value
+	logger *log.Logger
 }
 
 func NewService(c Config, l *log.Logger) *Service {
-	return &Service{
-		enabled:      c.Enabled,
-		teams:        c.Teams,
-		recipients:   c.Recipients,
-		apikey:       c.APIKey,
-		url:          c.URL + "/",
-		recovery_url: c.RecoveryURL + "/",
-		global:       c.Global,
-		logger:       l,
+	s := &Service{
+		logger: l,
 	}
+	s.config.Store(c)
+	return s
 }
 
 func (s *Service) Open() error {
@@ -48,6 +36,10 @@ func (s *Service) Close() error {
 	return nil
 }
 
+func (s *Service) loadConfig() Config {
+	return s.config.Load().(Config)
+}
+
 func (s *Service) Update(newConfig []interface{}) error {
 	if l := len(newConfig); l != 1 {
 		return fmt.Errorf("expected only one new config object, got %d", l)
@@ -55,21 +47,14 @@ func (s *Service) Update(newConfig []interface{}) error {
 	if c, ok := newConfig[0].(Config); !ok {
 		return fmt.Errorf("expected config object to be of type %T, got %T", c, newConfig[0])
 	} else {
-		s.mu.Lock()
-		s.enabled = c.Enabled
-		s.teams = c.Teams
-		s.recipients = c.Recipients
-		s.apikey = c.APIKey
-		s.url = c.URL + "/"
-		s.recovery_url = c.RecoveryURL + "/"
-		s.global = c.Global
-		s.mu.Unlock()
+		s.config.Store(c)
 	}
 	return nil
 }
 
 func (s *Service) Global() bool {
-	return s.global
+	c := s.loadConfig()
+	return c.Global
 }
 
 func (s *Service) Alert(teams []string, recipients []string, messageType, message, entityID string, t time.Time, details interface{}) error {
@@ -101,16 +86,15 @@ func (s *Service) Alert(teams []string, recipients []string, messageType, messag
 }
 
 func (s *Service) preparePost(teams []string, recipients []string, messageType, message, entityID string, t time.Time, details interface{}) (string, io.Reader, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if !s.enabled {
+	c := s.loadConfig()
+	if !c.Enabled {
 		return "", nil, errors.New("service not enabled")
 	}
 
 	ogData := make(map[string]interface{})
-	url := s.url
+	url := c.URL + "/"
 
-	ogData["apiKey"] = s.apikey
+	ogData["apiKey"] = c.APIKey
 	ogData["entity"] = entityID
 	ogData["alias"] = entityID
 	ogData["message"] = message
@@ -126,7 +110,7 @@ func (s *Service) preparePost(teams []string, recipients []string, messageType, 
 
 	switch messageType {
 	case "RECOVERY":
-		url = s.recovery_url
+		url = c.RecoveryURL + "/"
 		ogData["note"] = message
 	}
 
@@ -139,7 +123,7 @@ func (s *Service) preparePost(teams []string, recipients []string, messageType, 
 	}
 
 	if len(teams) == 0 {
-		teams = s.teams
+		teams = c.Teams
 	}
 
 	if len(teams) > 0 {
@@ -147,7 +131,7 @@ func (s *Service) preparePost(teams []string, recipients []string, messageType, 
 	}
 
 	if len(recipients) == 0 {
-		recipients = s.recipients
+		recipients = c.Recipients
 	}
 
 	if len(recipients) > 0 {

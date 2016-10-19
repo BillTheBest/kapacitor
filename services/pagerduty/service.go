@@ -9,31 +9,25 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"sync"
+	"sync/atomic"
 
 	"github.com/influxdata/kapacitor"
 )
 
 type Service struct {
-	mu           sync.RWMutex
-	enabled      bool
+	config       atomic.Value
 	HTTPDService interface {
 		URL() string
 	}
-	serviceKey string
-	url        string
-	global     bool
-	logger     *log.Logger
+	logger *log.Logger
 }
 
 func NewService(c Config, l *log.Logger) *Service {
-	return &Service{
-		enabled:    c.Enabled,
-		serviceKey: c.ServiceKey,
-		url:        c.URL,
-		global:     c.Global,
-		logger:     l,
+	s := &Service{
+		logger: l,
 	}
+	s.config.Store(c)
+	return s
 }
 
 func (s *Service) Open() error {
@@ -44,6 +38,10 @@ func (s *Service) Close() error {
 	return nil
 }
 
+func (s *Service) loadConfig() Config {
+	return s.config.Load().(Config)
+}
+
 func (s *Service) Update(newConfig []interface{}) error {
 	if l := len(newConfig); l != 1 {
 		return fmt.Errorf("expected only one new config object, got %d", l)
@@ -51,20 +49,14 @@ func (s *Service) Update(newConfig []interface{}) error {
 	if c, ok := newConfig[0].(Config); !ok {
 		return fmt.Errorf("expected config object to be of type %T, got %T", c, newConfig[0])
 	} else {
-		s.mu.Lock()
-		s.enabled = c.Enabled
-		s.serviceKey = c.ServiceKey
-		s.url = c.URL
-		s.global = c.Global
-		s.mu.Unlock()
+		s.config.Store(c)
 	}
 	return nil
 }
 
 func (s *Service) Global() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.global
+	c := s.loadConfig()
+	return c.Global
 }
 
 func (s *Service) Alert(serviceKey, incidentKey, desc string, level kapacitor.AlertLevel, details interface{}) error {
@@ -95,10 +87,9 @@ func (s *Service) Alert(serviceKey, incidentKey, desc string, level kapacitor.Al
 }
 
 func (s *Service) preparePost(serviceKey, incidentKey, desc string, level kapacitor.AlertLevel, details interface{}) (string, io.Reader, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
 
-	if !s.enabled {
+	c := s.loadConfig()
+	if !c.Enabled {
 		return "", nil, errors.New("service is not enabled")
 	}
 
@@ -114,7 +105,7 @@ func (s *Service) preparePost(serviceKey, incidentKey, desc string, level kapaci
 
 	pData := make(map[string]string)
 	if serviceKey == "" {
-		pData["service_key"] = s.serviceKey
+		pData["service_key"] = c.ServiceKey
 	} else {
 		pData["service_key"] = serviceKey
 	}
@@ -139,5 +130,5 @@ func (s *Service) preparePost(serviceKey, incidentKey, desc string, level kapaci
 		return "", nil, err
 	}
 
-	return s.url, &post, nil
+	return c.URL, &post, nil
 }

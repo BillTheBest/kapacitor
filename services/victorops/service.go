@@ -3,35 +3,31 @@ package victorops
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
-	"sync"
+	"net/url"
+	"path"
+	"sync/atomic"
 	"time"
 
 	"github.com/influxdata/kapacitor"
+	"github.com/pkg/errors"
 )
 
 type Service struct {
-	mu         sync.RWMutex
-	enabled    bool
-	routingKey string
-	url        string
-	global     bool
-	logger     *log.Logger
+	config atomic.Value
+	logger *log.Logger
 }
 
 func NewService(c Config, l *log.Logger) *Service {
-	return &Service{
-		enabled:    c.Enabled,
-		routingKey: c.RoutingKey,
-		url:        c.URL + "/" + c.APIKey + "/",
-		global:     c.Global,
-		logger:     l,
+	s := &Service{
+		logger: l,
 	}
+	s.config.Store(c)
+	return s
 }
 
 func (s *Service) Open() error {
@@ -42,6 +38,10 @@ func (s *Service) Close() error {
 	return nil
 }
 
+func (s *Service) loadConfig() Config {
+	return s.config.Load().(Config)
+}
+
 func (s *Service) Update(newConfig []interface{}) error {
 	if l := len(newConfig); l != 1 {
 		return fmt.Errorf("expected only one new config object, got %d", l)
@@ -49,20 +49,14 @@ func (s *Service) Update(newConfig []interface{}) error {
 	if c, ok := newConfig[0].(Config); !ok {
 		return fmt.Errorf("expected config object to be of type %T, got %T", c, newConfig[0])
 	} else {
-		s.mu.Lock()
-		s.enabled = c.Enabled
-		s.routingKey = c.RoutingKey
-		s.url = c.URL + "/" + c.APIKey + "/"
-		s.global = c.Global
-		s.mu.Unlock()
+		s.config.Store(c)
 	}
 	return nil
 }
 
 func (s *Service) Global() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.global
+	c := s.loadConfig()
+	return c.Global
 }
 
 func (s *Service) Alert(routingKey, messageType, message, entityID string, t time.Time, details interface{}) error {
@@ -71,6 +65,7 @@ func (s *Service) Alert(routingKey, messageType, message, entityID string, t tim
 		return err
 	}
 
+	log.Println("D! posting to ", url)
 	resp, err := http.Post(url, "application/json", post)
 	if err != nil {
 		return err
@@ -97,9 +92,8 @@ func (s *Service) Alert(routingKey, messageType, message, entityID string, t tim
 }
 
 func (s *Service) preparePost(routingKey, messageType, message, entityID string, t time.Time, details interface{}) (string, io.Reader, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if !s.enabled {
+	c := s.loadConfig()
+	if !c.Enabled {
 		return "", nil, errors.New("service is not enabled")
 	}
 
@@ -118,7 +112,7 @@ func (s *Service) preparePost(routingKey, messageType, message, entityID string,
 	}
 
 	if routingKey == "" {
-		routingKey = s.routingKey
+		routingKey = c.RoutingKey
 	}
 
 	// Post data to VO
@@ -128,5 +122,10 @@ func (s *Service) preparePost(routingKey, messageType, message, entityID string,
 	if err != nil {
 		return "", nil, err
 	}
-	return s.url + routingKey, &post, nil
+	u, err := url.Parse(c.URL)
+	if err != nil {
+		return "", nil, errors.Wrap(err, "invalid URL")
+	}
+	u.Path = path.Join(u.Path, c.APIKey, routingKey)
+	return u.String(), &post, nil
 }

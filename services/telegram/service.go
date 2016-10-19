@@ -3,40 +3,29 @@ package telegram
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
-	"sync"
+	"net/url"
+	"path"
+	"sync/atomic"
+
+	"github.com/pkg/errors"
 )
 
 type Service struct {
-	mu                    sync.RWMutex
-	enabled               bool
-	chatId                string
-	parseMode             string
-	disableWebPagePreview bool
-	disableNotification   bool
-	url                   string
-	global                bool
-	stateChangesOnly      bool
-	logger                *log.Logger
+	config atomic.Value
+	logger *log.Logger
 }
 
 func NewService(c Config, l *log.Logger) *Service {
-	return &Service{
-		enabled:               c.Enabled,
-		chatId:                c.ChatId,
-		parseMode:             c.ParseMode,
-		disableWebPagePreview: c.DisableWebPagePreview,
-		disableNotification:   c.DisableNotification,
-		url:                   c.URL + c.Token + "/sendMessage",
-		global:                c.Global,
-		stateChangesOnly:      c.StateChangesOnly,
-		logger:                l,
+	s := &Service{
+		logger: l,
 	}
+	s.config.Store(c)
+	return s
 }
 
 func (s *Service) Open() error {
@@ -47,6 +36,10 @@ func (s *Service) Close() error {
 	return nil
 }
 
+func (s *Service) loadConfig() Config {
+	return s.config.Load().(Config)
+}
+
 func (s *Service) Update(newConfig []interface{}) error {
 	if l := len(newConfig); l != 1 {
 		return fmt.Errorf("expected only one new config object, got %d", l)
@@ -54,29 +47,18 @@ func (s *Service) Update(newConfig []interface{}) error {
 	if c, ok := newConfig[0].(Config); !ok {
 		return fmt.Errorf("expected config object to be of type %T, got %T", c, newConfig[0])
 	} else {
-		s.mu.Lock()
-		s.enabled = c.Enabled
-		s.chatId = c.ChatId
-		s.parseMode = c.ParseMode
-		s.disableWebPagePreview = c.DisableWebPagePreview
-		s.disableNotification = c.DisableNotification
-		s.url = c.URL + c.Token + "/sendMessage"
-		s.global = c.Global
-		s.stateChangesOnly = c.StateChangesOnly
-		s.mu.Unlock()
+		s.config.Store(c)
 	}
 	return nil
 }
 
 func (s *Service) Global() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.global
+	c := s.loadConfig()
+	return c.Global
 }
 func (s *Service) StateChangesOnly() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.stateChangesOnly
+	c := s.loadConfig()
+	return c.StateChangesOnly
 }
 
 func (s *Service) Alert(chatId, parseMode, message string, disableWebPagePreview, disableNotification bool) error {
@@ -113,18 +95,17 @@ func (s *Service) Alert(chatId, parseMode, message string, disableWebPagePreview
 	return nil
 }
 func (s *Service) preparePost(chatId, parseMode, message string, disableWebPagePreview, disableNotification bool) (string, io.Reader, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	c := s.loadConfig()
 
-	if !s.enabled {
+	if !c.Enabled {
 		return "", nil, errors.New("service is not enabled")
 	}
 	if chatId == "" {
-		chatId = s.chatId
+		chatId = c.ChatId
 	}
 
 	if parseMode == "" {
-		parseMode = s.parseMode
+		parseMode = c.ParseMode
 	}
 
 	if parseMode != "" && parseMode != "Markdown" && parseMode != "HTML" {
@@ -139,11 +120,11 @@ func (s *Service) preparePost(chatId, parseMode, message string, disableWebPageP
 		postData["parse_mode"] = parseMode
 	}
 
-	if disableWebPagePreview || s.disableWebPagePreview {
+	if disableWebPagePreview || c.DisableWebPagePreview {
 		postData["disable_web_page_preview"] = true
 	}
 
-	if disableNotification || s.disableNotification {
+	if disableNotification || c.DisableNotification {
 		postData["disable_notification"] = true
 	}
 
@@ -154,5 +135,10 @@ func (s *Service) preparePost(chatId, parseMode, message string, disableWebPageP
 		return "", nil, err
 	}
 
-	return s.url, &post, nil
+	u, err := url.Parse(c.URL)
+	if err != nil {
+		return "", nil, errors.Wrap(err, "invalid URL")
+	}
+	u.Path = path.Join(u.Path+c.Token, "sendMessage")
+	return u.String(), &post, nil
 }

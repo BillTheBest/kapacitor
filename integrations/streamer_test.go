@@ -6448,8 +6448,8 @@ stream
 		t.Error(err)
 	}
 
-	if rc := atomic.LoadInt32(&requestCount); rc != 2 {
-		t.Errorf("unexpected requestCount got %d exp 1", rc)
+	if got, exp := atomic.LoadInt32(&requestCount), int32(2); got != exp {
+		t.Errorf("unexpected requestCount got %d exp %d", got, exp)
 	}
 }
 
