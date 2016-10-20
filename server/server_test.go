@@ -4809,15 +4809,18 @@ func TestServer_UpdateConfig(t *testing.T) {
 			section: "influxdb",
 			element: "default",
 			setDefaults: func(c *server.Config) {
+				c.InfluxDB[0].Enabled = true
 				c.InfluxDB[0].Username = "bob"
 				c.InfluxDB[0].Password = "secret"
 				c.InfluxDB[0].URLs = []string{db.URL()}
+				// Set really long timeout since we shouldn't hit it
+				c.InfluxDB[0].StartUpTimeout = toml.Duration(time.Hour)
 			},
 			expDefaultSection: client.ConfigSection{
 				Elements: []client.ConfigElement{{
 					"default":                     false,
 					"disable-subscriptions":       false,
-					"enabled":                     false,
+					"enabled":                     true,
 					"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
 					"http-port":                   float64(0),
 					"insecure-skip-verify":        false,
@@ -4827,11 +4830,11 @@ func TestServer_UpdateConfig(t *testing.T) {
 					"ssl-ca":                      "",
 					"ssl-cert":                    "",
 					"ssl-key":                     "",
-					"startup-timeout":             "5m0s",
+					"startup-timeout":             "1h0m0s",
 					"subscription-protocol":       "http",
 					"subscriptions":               nil,
 					"subscriptions-sync-interval": "1m0s",
-					"timeout":                     "0",
+					"timeout":                     "0s",
 					"udp-bind":                    "",
 					"udp-buffer":                  float64(1e3),
 					"udp-read-buffer":             float64(0),
@@ -4842,7 +4845,7 @@ func TestServer_UpdateConfig(t *testing.T) {
 			expDefaultElement: client.ConfigElement{
 				"default":                     false,
 				"disable-subscriptions":       false,
-				"enabled":                     false,
+				"enabled":                     true,
 				"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
 				"http-port":                   float64(0),
 				"insecure-skip-verify":        false,
@@ -4852,11 +4855,11 @@ func TestServer_UpdateConfig(t *testing.T) {
 				"ssl-ca":                      "",
 				"ssl-cert":                    "",
 				"ssl-key":                     "",
-				"startup-timeout":             "5m0s",
+				"startup-timeout":             "1h0m0s",
 				"subscription-protocol":       "http",
 				"subscriptions":               nil,
 				"subscriptions-sync-interval": "1m0s",
-				"timeout":                     "0",
+				"timeout":                     "0s",
 				"udp-bind":                    "",
 				"udp-buffer":                  float64(1e3),
 				"udp-read-buffer":             float64(0),
@@ -4864,6 +4867,64 @@ func TestServer_UpdateConfig(t *testing.T) {
 				"username":                    "bob",
 			},
 			updates: []updateAction{
+				{
+					// Set Invalid URL to make sure we can fix it without waiting for connection timeouts
+					updateAction: client.ConfigUpdateAction{
+						Set: map[string]interface{}{
+							"urls": []string{"http://192.0.2.0:8086"},
+						},
+					},
+					expSection: client.ConfigSection{
+						Elements: []client.ConfigElement{{
+							"default":                     false,
+							"disable-subscriptions":       false,
+							"enabled":                     true,
+							"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
+							"http-port":                   float64(0),
+							"insecure-skip-verify":        false,
+							"kapacitor-hostname":          "",
+							"name":                        "default",
+							"password":                    true,
+							"ssl-ca":                      "",
+							"ssl-cert":                    "",
+							"ssl-key":                     "",
+							"startup-timeout":             "1h0m0s",
+							"subscription-protocol":       "http",
+							"subscriptions":               nil,
+							"subscriptions-sync-interval": "1m0s",
+							"timeout":                     "0s",
+							"udp-bind":                    "",
+							"udp-buffer":                  float64(1e3),
+							"udp-read-buffer":             float64(0),
+							"urls":                        []interface{}{"http://192.0.2.0:8086"},
+							"username":                    "bob",
+						}},
+					},
+					expElement: client.ConfigElement{
+						"default":                     false,
+						"disable-subscriptions":       false,
+						"enabled":                     true,
+						"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
+						"http-port":                   float64(0),
+						"insecure-skip-verify":        false,
+						"kapacitor-hostname":          "",
+						"name":                        "default",
+						"password":                    true,
+						"ssl-ca":                      "",
+						"ssl-cert":                    "",
+						"ssl-key":                     "",
+						"startup-timeout":             "1h0m0s",
+						"subscription-protocol":       "http",
+						"subscriptions":               nil,
+						"subscriptions-sync-interval": "1m0s",
+						"timeout":                     "0s",
+						"udp-bind":                    "",
+						"udp-buffer":                  float64(1e3),
+						"udp-read-buffer":             float64(0),
+						"urls":                        []interface{}{"http://192.0.2.0:8086"},
+						"username":                    "bob",
+					},
+				},
 				{
 					updateAction: client.ConfigUpdateAction{
 						Set: map[string]interface{}{
@@ -4876,7 +4937,7 @@ func TestServer_UpdateConfig(t *testing.T) {
 						Elements: []client.ConfigElement{{
 							"default":                     true,
 							"disable-subscriptions":       false,
-							"enabled":                     false,
+							"enabled":                     true,
 							"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
 							"http-port":                   float64(0),
 							"insecure-skip-verify":        false,
@@ -4886,11 +4947,66 @@ func TestServer_UpdateConfig(t *testing.T) {
 							"ssl-ca":                      "",
 							"ssl-cert":                    "",
 							"ssl-key":                     "",
-							"startup-timeout":             "5m0s",
+							"startup-timeout":             "1h0m0s",
 							"subscription-protocol":       "https",
 							"subscriptions":               map[string]interface{}{"_internal": []interface{}{"monitor"}},
 							"subscriptions-sync-interval": "1m0s",
-							"timeout":                     "0",
+							"timeout":                     "0s",
+							"udp-bind":                    "",
+							"udp-buffer":                  float64(1e3),
+							"udp-read-buffer":             float64(0),
+							"urls":                        []interface{}{"http://192.0.2.0:8086"},
+							"username":                    "bob",
+						}},
+					},
+					expElement: client.ConfigElement{
+						"default":                     true,
+						"disable-subscriptions":       false,
+						"enabled":                     true,
+						"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
+						"http-port":                   float64(0),
+						"insecure-skip-verify":        false,
+						"kapacitor-hostname":          "",
+						"name":                        "default",
+						"password":                    true,
+						"ssl-ca":                      "",
+						"ssl-cert":                    "",
+						"ssl-key":                     "",
+						"startup-timeout":             "1h0m0s",
+						"subscription-protocol":       "https",
+						"subscriptions":               map[string]interface{}{"_internal": []interface{}{"monitor"}},
+						"subscriptions-sync-interval": "1m0s",
+						"timeout":                     "0s",
+						"udp-bind":                    "",
+						"udp-buffer":                  float64(1e3),
+						"udp-read-buffer":             float64(0),
+						"urls":                        []interface{}{"http://192.0.2.0:8086"},
+						"username":                    "bob",
+					},
+				},
+				{
+					updateAction: client.ConfigUpdateAction{
+						Delete: []string{"urls"},
+					},
+					expSection: client.ConfigSection{
+						Elements: []client.ConfigElement{{
+							"default":                     true,
+							"disable-subscriptions":       false,
+							"enabled":                     true,
+							"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
+							"http-port":                   float64(0),
+							"insecure-skip-verify":        false,
+							"kapacitor-hostname":          "",
+							"name":                        "default",
+							"password":                    true,
+							"ssl-ca":                      "",
+							"ssl-cert":                    "",
+							"ssl-key":                     "",
+							"startup-timeout":             "1h0m0s",
+							"subscription-protocol":       "https",
+							"subscriptions":               map[string]interface{}{"_internal": []interface{}{"monitor"}},
+							"subscriptions-sync-interval": "1m0s",
+							"timeout":                     "0s",
 							"udp-bind":                    "",
 							"udp-buffer":                  float64(1e3),
 							"udp-read-buffer":             float64(0),
@@ -4901,7 +5017,7 @@ func TestServer_UpdateConfig(t *testing.T) {
 					expElement: client.ConfigElement{
 						"default":                     true,
 						"disable-subscriptions":       false,
-						"enabled":                     false,
+						"enabled":                     true,
 						"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
 						"http-port":                   float64(0),
 						"insecure-skip-verify":        false,
@@ -4911,11 +5027,11 @@ func TestServer_UpdateConfig(t *testing.T) {
 						"ssl-ca":                      "",
 						"ssl-cert":                    "",
 						"ssl-key":                     "",
-						"startup-timeout":             "5m0s",
+						"startup-timeout":             "1h0m0s",
 						"subscription-protocol":       "https",
 						"subscriptions":               map[string]interface{}{"_internal": []interface{}{"monitor"}},
 						"subscriptions-sync-interval": "1m0s",
-						"timeout":                     "0",
+						"timeout":                     "0s",
 						"udp-bind":                    "",
 						"udp-buffer":                  float64(1e3),
 						"udp-read-buffer":             float64(0),
@@ -4931,12 +5047,11 @@ func TestServer_UpdateConfig(t *testing.T) {
 						},
 					},
 					expSection: client.ConfigSection{
-
 						Elements: []client.ConfigElement{
 							{
 								"default":                     true,
 								"disable-subscriptions":       false,
-								"enabled":                     false,
+								"enabled":                     true,
 								"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
 								"http-port":                   float64(0),
 								"insecure-skip-verify":        false,
@@ -4946,11 +5061,11 @@ func TestServer_UpdateConfig(t *testing.T) {
 								"ssl-ca":                      "",
 								"ssl-cert":                    "",
 								"ssl-key":                     "",
-								"startup-timeout":             "5m0s",
+								"startup-timeout":             "1h0m0s",
 								"subscription-protocol":       "https",
 								"subscriptions":               map[string]interface{}{"_internal": []interface{}{"monitor"}},
 								"subscriptions-sync-interval": "1m0s",
-								"timeout":                     "0",
+								"timeout":                     "0s",
 								"udp-bind":                    "",
 								"udp-buffer":                  float64(1e3),
 								"udp-read-buffer":             float64(0),
@@ -4960,7 +5075,7 @@ func TestServer_UpdateConfig(t *testing.T) {
 							{
 								"default":                     false,
 								"disable-subscriptions":       false,
-								"enabled":                     true,
+								"enabled":                     false,
 								"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
 								"http-port":                   float64(0),
 								"insecure-skip-verify":        false,
@@ -4974,7 +5089,7 @@ func TestServer_UpdateConfig(t *testing.T) {
 								"subscription-protocol":       "http",
 								"subscriptions":               nil,
 								"subscriptions-sync-interval": "1m0s",
-								"timeout":                     "0",
+								"timeout":                     "0s",
 								"udp-bind":                    "",
 								"udp-buffer":                  float64(1e3),
 								"udp-read-buffer":             float64(0),
@@ -4987,7 +5102,7 @@ func TestServer_UpdateConfig(t *testing.T) {
 					expElement: client.ConfigElement{
 						"default":                     false,
 						"disable-subscriptions":       false,
-						"enabled":                     true,
+						"enabled":                     false,
 						"excluded-subscriptions":      map[string]interface{}{"_kapacitor": []interface{}{"autogen"}},
 						"http-port":                   float64(0),
 						"insecure-skip-verify":        false,
@@ -5001,7 +5116,7 @@ func TestServer_UpdateConfig(t *testing.T) {
 						"subscription-protocol":       "http",
 						"subscriptions":               nil,
 						"subscriptions-sync-interval": "1m0s",
-						"timeout":                     "0",
+						"timeout":                     "0s",
 						"udp-bind":                    "",
 						"udp-buffer":                  float64(1e3),
 						"udp-read-buffer":             float64(0),
@@ -5617,7 +5732,6 @@ func TestServer_UpdateConfig(t *testing.T) {
 				link = cli.ConfigSectionLink(tc.section)
 			}
 
-			// Add an override
 			if err := cli.ConfigUpdate(link, ua.updateAction); err != nil {
 				t.Fatal(err)
 			}
@@ -5625,5 +5739,7 @@ func TestServer_UpdateConfig(t *testing.T) {
 				t.Errorf("unexpected update result %d for %s/%s: %v", i, tc.section, element, err)
 			}
 		}
+		// TODO REMOVE THIS
+		break
 	}
 }

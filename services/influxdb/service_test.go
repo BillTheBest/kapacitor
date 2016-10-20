@@ -1,6 +1,7 @@
 package influxdb_test
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -1197,42 +1198,42 @@ func (a *authService) RevokeSubscriptionAccess(token string) error {
 
 type clientCreator struct {
 	// Index for the order the client was created, matches the order clusters are created.
-	CreateFunc func(influxcli.HTTPConfig) (influxcli.Client, error)
+	CreateFunc func(influxcli.HTTPConfig) (influxcli.ClientUpdater, error)
 
 	// Cient functions passed down to any created client
-	PingFunc  func(timeout time.Duration) (time.Duration, string, error)
-	WriteFunc func(bp influxcli.BatchPoints) error
-	QueryFunc func(clusterName string, q influxcli.Query) (*influxcli.Response, error)
-	CloseFunc func() error
+	PingFunc   func(ctx context.Context) (time.Duration, string, error)
+	WriteFunc  func(bp influxcli.BatchPoints) error
+	QueryFunc  func(clusterName string, q influxcli.Query) (*influxcli.Response, error)
+	UpdateFunc func(influxcli.HTTPConfig) error
 }
 
-func (c *clientCreator) Create(config influxcli.HTTPConfig) (influxcli.Client, error) {
+func (c *clientCreator) Create(config influxcli.HTTPConfig) (influxcli.ClientUpdater, error) {
 	if c.CreateFunc != nil {
 		return c.CreateFunc(config)
 	}
 	// Retrieve cluster name from URL
-	u, _ := url.Parse(config.URL)
+	u, _ := url.Parse(config.URLs[0])
 	cli := influxDBClient{
 		clusterName: u.Host,
 		PingFunc:    c.PingFunc,
 		WriteFunc:   c.WriteFunc,
 		QueryFunc:   c.QueryFunc,
-		CloseFunc:   c.CloseFunc,
+		UpdateFunc:  c.UpdateFunc,
 	}
 	return cli, nil
 }
 
 type influxDBClient struct {
 	clusterName string
-	PingFunc    func(timeout time.Duration) (time.Duration, string, error)
+	PingFunc    func(ctx context.Context) (time.Duration, string, error)
 	WriteFunc   func(bp influxcli.BatchPoints) error
 	QueryFunc   func(clusterName string, q influxcli.Query) (*influxcli.Response, error)
-	CloseFunc   func() error
+	UpdateFunc  func(influxcli.HTTPConfig) error
 }
 
-func (c influxDBClient) Ping(timeout time.Duration) (time.Duration, string, error) {
+func (c influxDBClient) Ping(ctx context.Context) (time.Duration, string, error) {
 	if c.PingFunc != nil {
-		return c.PingFunc(timeout)
+		return c.PingFunc(ctx)
 	}
 	return 0, "testversion", nil
 }
@@ -1248,9 +1249,9 @@ func (c influxDBClient) Query(q influxcli.Query) (*influxcli.Response, error) {
 	}
 	return &influxcli.Response{}, nil
 }
-func (c influxDBClient) Close() error {
-	if c.CloseFunc != nil {
-		return c.CloseFunc()
+func (c influxDBClient) Update(config influxcli.HTTPConfig) error {
+	if c.UpdateFunc != nil {
+		return c.UpdateFunc(config)
 	}
 	return nil
 }

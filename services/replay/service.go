@@ -1334,8 +1334,7 @@ func (s *Service) startRecordBatch(t *kapacitor.Task, start, stop time.Time) ([]
 			defer close(source)
 
 			// Connect to the cluster
-			var con influxdb.Client
-			var err error
+			cli, err := s.InfluxDBService.NewNamedClient(cluster)
 			if err != nil {
 				errors <- err
 				return
@@ -1345,29 +1344,7 @@ func (s *Service) startRecordBatch(t *kapacitor.Task, start, stop time.Time) ([]
 				query := influxdb.Query{
 					Command: q.String(),
 				}
-				var resp *influxdb.Response
-				err := kapacitor.DoWhileTemporary(func() error {
-					var err error
-					if con == nil {
-						con, err = s.InfluxDBService.NewNamedClient(cluster)
-						if err != nil {
-							con = nil
-							return err
-						}
-					}
-					resp, err = con.Query(query)
-					if err != nil {
-						con.Close()
-						con = nil
-						return err
-					}
-					if err := resp.Error(); err != nil {
-						con.Close()
-						con = nil
-						return err
-					}
-					return nil
-				})
+				resp, err := cli.Query(query)
 				if err != nil {
 					errors <- err
 					return
@@ -1588,35 +1565,16 @@ func (s *Service) execQuery(q, cluster string) (kapacitor.DBRP, *influxdb.Respon
 		return dbrp, nil, errors.New("InfluxDB not configured, cannot record query")
 	}
 	// Query InfluxDB
-	var con influxdb.Client
-	var resp *influxdb.Response
-	err = kapacitor.DoWhileTemporary(func() error {
-		var err error
-		if con == nil {
-			con, err = s.InfluxDBService.NewNamedClient(cluster)
-			if err != nil {
-				con = nil
-				return err
-			}
-		}
-		query := influxdb.Query{
-			Command: q,
-		}
-		resp, err = con.Query(query)
-		if err != nil {
-			con.Close()
-			con = nil
-			return err
-		}
-		if err := resp.Error(); err != nil {
-			con.Close()
-			con = nil
-			return err
-		}
-		return nil
-	})
+	con, err := s.InfluxDBService.NewNamedClient(cluster)
 	if err != nil {
-		return dbrp, nil, err
+		return dbrp, nil, errors.Wrap(err, "failed to get InfluxDB client")
+	}
+	query := influxdb.Query{
+		Command: q,
+	}
+	resp, err := con.Query(query)
+	if err != nil {
+		return dbrp, nil, errors.Wrap(err, "InfluxDB query failed")
 	}
 	return dbrp, resp, nil
 }

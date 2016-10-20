@@ -18,7 +18,6 @@ import (
 
 const (
 	statsQueryErrors    = "query_errors"
-	statsConnectErrors  = "connect_errors"
 	statsBatchesQueried = "batches_queried"
 	statsPointsQueried  = "points_queried"
 )
@@ -139,7 +138,6 @@ type QueryNode struct {
 	aborting chan struct{}
 
 	queryErrors    *expvar.Int
-	connectErrors  *expvar.Int
 	batchesQueried *expvar.Int
 	pointsQueried  *expvar.Int
 	byName         bool
@@ -265,12 +263,10 @@ func (b *QueryNode) Queries(start, stop time.Time) ([]*Query, error) {
 func (b *QueryNode) doQuery() error {
 	defer b.ins[0].Close()
 	b.queryErrors = &expvar.Int{}
-	b.connectErrors = &expvar.Int{}
 	b.batchesQueried = &expvar.Int{}
 	b.pointsQueried = &expvar.Int{}
 
 	b.statMap.Set(statsQueryErrors, b.queryErrors)
-	b.statMap.Set(statsConnectErrors, b.connectErrors)
 	b.statMap.Set(statsBatchesQueried, b.batchesQueried)
 	b.statMap.Set(statsPointsQueried, b.pointsQueried)
 
@@ -278,7 +274,10 @@ func (b *QueryNode) doQuery() error {
 		return errors.New("InfluxDB not configured, cannot query InfluxDB for batch query")
 	}
 
-	var con influxdb.Client
+	con, err := b.et.tm.InfluxDBService.NewNamedClient(b.b.Cluster)
+	if err != nil {
+		return errors.Wrap(err, "failed to get InfluxDB client")
+	}
 	tickC := b.ticker.Start()
 	for {
 		select {
@@ -288,49 +287,21 @@ func (b *QueryNode) doQuery() error {
 			return errors.New("batch doQuery aborted")
 		case now := <-tickC:
 			b.timer.Start()
-
 			// Update times for query
 			stop := now.Add(-1 * b.b.Offset)
 			b.query.SetStartTime(stop.Add(-1 * b.b.Period))
 			b.query.SetStopTime(stop)
 
-			b.logger.Println("D! starting next batch query:", b.query.String())
+			qStr := b.query.String()
+			b.logger.Println("D! starting next batch query:", qStr)
 
-			var resp *influxdb.Response
-			err := DoWhileTemporary(func() error {
-				var err error
-				if con == nil {
-					con, err = b.et.tm.InfluxDBService.NewNamedClient(b.b.Cluster)
-					if err != nil {
-						b.connectErrors.Add(1)
-						// Ensure connection is nil
-						con = nil
-						return errors.Wrap(err, "failed to connect to InfluxDB")
-					}
-				}
-				q := influxdb.Query{
-					Command: b.query.String(),
-				}
-
-				// Execute query
-				resp, err = con.Query(q)
-				if err != nil {
-					b.queryErrors.Add(1)
-					// Get a new connection
-					con.Close()
-					con = nil
-					return errors.Wrap(err, "query failed")
-				}
-				if err := resp.Error(); err != nil {
-					b.queryErrors.Add(1)
-					// Get a new connection
-					con.Close()
-					con = nil
-					return errors.Wrap(err, "query returned error response")
-				}
-				return nil
-			})
+			// Execute query
+			q := influxdb.Query{
+				Command: qStr,
+			}
+			resp, err := con.Query(q)
 			if err != nil {
+				b.queryErrors.Add(1)
 				b.logger.Println("E!", err)
 				b.timer.Stop()
 				break

@@ -53,11 +53,11 @@ type Config struct {
 func NewConfig() Config {
 	c := &Config{}
 	c.Init()
+	c.Enabled = true
 	return *c
 }
 
 func (c *Config) Init() {
-	c.Enabled = true
 	c.Name = "default"
 	c.URLs = []string{"http://localhost:8086"}
 	c.ExcludedSubscriptions = map[string][]string{

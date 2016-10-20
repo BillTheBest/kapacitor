@@ -27,13 +27,10 @@ func NewMockInfluxDBService(h http.Handler) *MockInfluxDBService {
 	}
 }
 
-func (m *MockInfluxDBService) NewDefaultClient() (influxdb.Client, error) {
-	return influxdb.NewHTTPClient(influxdb.HTTPConfig{
-		URL: m.ts.URL,
-	})
-}
 func (m *MockInfluxDBService) NewNamedClient(name string) (influxdb.Client, error) {
-	return m.NewDefaultClient()
+	return influxdb.NewHTTPClient(influxdb.HTTPConfig{
+		URLs: []string{m.ts.URL},
+	})
 }
 
 func compareResultsMetainfo(exp, got kapacitor.Result) (bool, string) {

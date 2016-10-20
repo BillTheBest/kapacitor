@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 )
 
 func TestClient_Query(t *testing.T) {
@@ -18,9 +17,8 @@ func TestClient_Query(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	config := HTTPConfig{URL: ts.URL}
+	config := HTTPConfig{URLs: []string{ts.URL}}
 	c, _ := NewHTTPClient(config)
-	defer c.Close()
 
 	query := Query{}
 	_, err := c.Query(query)
@@ -48,9 +46,8 @@ func TestClient_BasicAuth(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	config := HTTPConfig{URL: ts.URL, Credentials: &Credentials{Method: UserAuthentication, Username: "username", Password: "password"}}
+	config := HTTPConfig{URLs: []string{ts.URL}, Credentials: Credentials{Method: UserAuthentication, Username: "username", Password: "password"}}
 	c, _ := NewHTTPClient(config)
-	defer c.Close()
 
 	query := Query{}
 	_, err := c.Query(query)
@@ -67,120 +64,17 @@ func TestClient_Ping(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	config := HTTPConfig{URL: ts.URL}
+	config := HTTPConfig{URLs: []string{ts.URL}}
 	c, _ := NewHTTPClient(config)
-	defer c.Close()
 
-	_, _, err := c.Ping(0)
+	_, _, err := c.Ping(nil)
 	if err != nil {
 		t.Errorf("unexpected error.  expected %v, actual %v", nil, err)
 	}
 }
 
-func TestClient_Quit(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var data Response
-		w.WriteHeader(http.StatusNoContent)
-		_ = json.NewEncoder(w).Encode(data)
-	}))
-	defer ts.Close()
-
-	quit := make(chan struct{})
-	config := HTTPConfig{
-		URL:  ts.URL,
-		Quit: quit,
-	}
-	c, _ := NewHTTPClient(config)
-	defer c.Close()
-
-	_, _, err := c.Ping(0)
-	if err != nil {
-		t.Errorf("unexpected error.  expected %v, actual %v", nil, err)
-	}
-	// Quit client
-	close(quit)
-
-	_, _, err = c.Ping(0)
-	if exp := "client has quitd"; err == nil || err.Error() != exp {
-		t.Errorf("unexpected error.  expected %s, actual %v", exp, err)
-	}
-	type temp interface {
-		Temporary() bool
-	}
-	if tmp, ok := err.(temp); !ok {
-		t.Error("expected error to be a temporary type")
-	} else if !tmp.Temporary() {
-		t.Error("expected error to be temporary")
-	}
-}
-
-func TestClient_Close_Quit(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var data Response
-		w.WriteHeader(http.StatusNoContent)
-		_ = json.NewEncoder(w).Encode(data)
-	}))
-	defer ts.Close()
-
-	quit := make(chan struct{})
-	config := HTTPConfig{
-		URL:  ts.URL,
-		Quit: quit,
-	}
-	c, _ := NewHTTPClient(config)
-
-	_, _, err := c.Ping(0)
-	if err != nil {
-		t.Errorf("unexpected error.  expected %v, actual %v", nil, err)
-	}
-	// Quit client
-	close(quit)
-
-	closed := make(chan struct{})
-	go func() {
-		c.Close()
-		close(closed)
-	}()
-	timer := time.NewTimer(10 * time.Millisecond)
-	select {
-	case <-closed:
-		// All good
-	case <-timer.C:
-		t.Fatal("expected the client to close")
-	}
-}
-
-func TestClient_Close_NoQuit(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var data Response
-		w.WriteHeader(http.StatusNoContent)
-		_ = json.NewEncoder(w).Encode(data)
-	}))
-	defer ts.Close()
-
-	quit := make(chan struct{})
-	config := HTTPConfig{
-		URL:  ts.URL,
-		Quit: quit,
-	}
-	c, _ := NewHTTPClient(config)
-
-	_, _, err := c.Ping(0)
-	if err != nil {
-		t.Errorf("unexpected error.  expected %v, actual %v", nil, err)
-	}
-	closed := make(chan struct{})
-	go func() {
-		c.Close()
-		close(closed)
-	}()
-	timer := time.NewTimer(10 * time.Millisecond)
-	select {
-	case <-closed:
-		// All good
-	case <-timer.C:
-		t.Fatal("expected the client to close")
-	}
+func TestClient_UpdateURLs(t *testing.T) {
+	t.Fatal("need to write test")
 }
 
 func TestClient_Concurrent_Use(t *testing.T) {
@@ -190,9 +84,8 @@ func TestClient_Concurrent_Use(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	config := HTTPConfig{URL: ts.URL}
+	config := HTTPConfig{URLs: []string{ts.URL}}
 	c, _ := NewHTTPClient(config)
-	defer c.Close()
 
 	var wg sync.WaitGroup
 	wg.Add(3)
@@ -225,7 +118,7 @@ func TestClient_Concurrent_Use(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < n; i++ {
-			c.Ping(time.Second)
+			c.Ping(nil)
 		}
 	}()
 	wg.Wait()
@@ -239,9 +132,8 @@ func TestClient_Write(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	config := HTTPConfig{URL: ts.URL}
+	config := HTTPConfig{URLs: []string{ts.URL}}
 	c, _ := NewHTTPClient(config)
-	defer c.Close()
 
 	bp, err := NewBatchPoints(BatchPointsConfig{})
 	if err != nil {
@@ -285,9 +177,8 @@ func TestClient_UserAgent(t *testing.T) {
 	for _, test := range tests {
 		var err error
 
-		config := HTTPConfig{URL: ts.URL, UserAgent: test.userAgent}
+		config := HTTPConfig{URLs: []string{ts.URL}, UserAgent: test.userAgent}
 		c, _ := NewHTTPClient(config)
-		defer c.Close()
 
 		receivedUserAgent = ""
 		code = http.StatusOK
@@ -313,7 +204,7 @@ func TestClient_UserAgent(t *testing.T) {
 
 		receivedUserAgent = ""
 		code = http.StatusNoContent
-		_, _, err = c.Ping(0)
+		_, _, err = c.Ping(nil)
 		if err != nil {
 			t.Errorf("unexpected error.  expected %v, actual %v", nil, err)
 		}

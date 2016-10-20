@@ -2,7 +2,7 @@ package influxdb
 
 import (
 	"bytes"
-	"crypto/tls"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -10,25 +10,31 @@ import (
 	"net/url"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	imodels "github.com/influxdata/influxdb/models"
 	"github.com/pkg/errors"
 )
 
-// Client is a HTTPClient interface for writing & querying the database
+// Client is an interface for writing to and querying from an InfluxDB instance.
 type Client interface {
 	// Ping checks that status of cluster
-	Ping(timeout time.Duration) (time.Duration, string, error)
+	// The provided context can be used to cancel the request.
+	Ping(ctx context.Context) (time.Duration, string, error)
 
 	// Write takes a BatchPoints object and writes all Points to InfluxDB.
 	Write(bp BatchPoints) error
 
 	// Query makes an InfluxDB Query on the database.
+	// The response is checked for an error and the is returned
+	// if it exists
 	Query(q Query) (*Response, error)
+}
 
-	// Close releases any resources a Client may be using.
-	Close() error
+type ClientUpdater interface {
+	Client
+	Update(new HTTPConfig) error
 }
 
 // BatchPointsConfig is the config data needed to create an instance of the BatchPoints struct
@@ -56,27 +62,20 @@ type Query struct {
 // HTTPConfig is the config data needed to create an HTTP Client
 type HTTPConfig struct {
 	// The URL of the InfluxDB server.
-	URL string
+	URLs []string
 
 	// Optional credentials for authenticating with the server.
-	Credentials *Credentials
+	Credentials Credentials
 
 	// UserAgent is the http User Agent, defaults to "KapacitorInfluxDBClient"
 	UserAgent string
 
-	// Timeout for influxdb writes, defaults to no timeout
+	// Timeout for requests, defaults to no timeout.
 	Timeout time.Duration
 
-	// InsecureSkipVerify gets passed to the http HTTPClient, if true, it will
-	// skip https certificate verification. Defaults to false
-	InsecureSkipVerify bool
-
-	// TLSConfig allows the user to set their own TLS config for the HTTP
-	// Client. If set, this option overrides InsecureSkipVerify.
-	TLSConfig *tls.Config
-
-	// Quit this client, something has changed.
-	Quit <-chan struct{}
+	// Transport is the HTTP transport to use for requests
+	// If nil, a default transport will be used.
+	Transport *http.Transport
 }
 
 // AuthenticationMethod defines the type of authentication used.
@@ -84,7 +83,7 @@ type AuthenticationMethod int
 
 // Supported authentication methods.
 const (
-	_ AuthenticationMethod = iota
+	NoAuthentication AuthenticationMethod = iota
 	UserAuthentication
 	BearerAuthentication
 )
@@ -103,19 +102,13 @@ type Credentials struct {
 	Token string
 }
 
-// HTTPClient is safe for concurrent use as the fields are all read-only
-// once the HTTPClient is instantiated.
+// HTTPClient is safe for concurrent use.
 type HTTPClient struct {
-	// N.B - if url.UserInfo is accessed in future modifications to the
-	// methods on HTTPClient, you will need to syncronise access to url.
-	url         url.URL
-	userAgent   string
-	credMu      sync.RWMutex
-	credentials *Credentials
-	httpClient  *http.Client
-	transport   *http.Transport
-	quit        <-chan struct{}
-	wg          sync.WaitGroup
+	mu     sync.RWMutex
+	config HTTPConfig
+	urls   []url.URL
+	client *http.Client
+	index  int32
 }
 
 // NewHTTPClient returns a new Client from the provided config.
@@ -124,87 +117,117 @@ func NewHTTPClient(conf HTTPConfig) (*HTTPClient, error) {
 	if conf.UserAgent == "" {
 		conf.UserAgent = "KapacitorInfluxDBClient"
 	}
-
-	u, err := url.Parse(conf.URL)
+	urls, err := parseURLs(conf.URLs)
 	if err != nil {
-		return nil, err
-	} else if u.Scheme != "http" && u.Scheme != "https" {
-		m := fmt.Sprintf("Unsupported protocol scheme: %s, your address"+
-			" must start with http:// or https://", u.Scheme)
-		return nil, errors.New(m)
+		return nil, errors.Wrap(err, "invalid URLs")
 	}
-
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: conf.InsecureSkipVerify,
-		},
-	}
-	if conf.TLSConfig != nil {
-		tr.TLSClientConfig = conf.TLSConfig
+	if conf.Transport == nil {
+		conf.Transport = &http.Transport{}
 	}
 	c := &HTTPClient{
-		url:         *u,
-		userAgent:   conf.UserAgent,
-		credentials: conf.Credentials,
-		httpClient: &http.Client{
+		config: conf,
+		urls:   urls,
+		client: &http.Client{
 			Timeout:   conf.Timeout,
-			Transport: tr,
+			Transport: conf.Transport,
 		},
-		quit:      conf.Quit,
-		transport: tr,
 	}
 	return c, nil
 }
 
-func (c *HTTPClient) setAuth(req *http.Request) error {
-	if c.credentials != nil {
-		// Get read lock on credentials
-		c.credMu.RLock()
-		defer c.credMu.RUnlock()
+func parseURLs(urlStrs []string) ([]url.URL, error) {
+	urls := make([]url.URL, len(urlStrs))
+	for i, urlStr := range urlStrs {
+		u, err := url.Parse(urlStr)
+		if err != nil {
+			return nil, err
+		} else if u.Scheme != "http" && u.Scheme != "https" {
+			return nil, fmt.Errorf(
+				"Unsupported protocol scheme: %s, your address must start with http:// or https://",
+				u.Scheme,
+			)
+		}
+		urls[i] = *u
+	}
+	return urls, nil
+}
 
-		switch c.credentials.Method {
-		case UserAuthentication:
-			req.SetBasicAuth(c.credentials.Username, c.credentials.Password)
-		case BearerAuthentication:
-			req.Header.Set("Authorization", "Bearer "+c.credentials.Token)
-		default:
-			return errors.New("unknown authentication method set")
+func (c *HTTPClient) loadConfig() HTTPConfig {
+	c.mu.RLock()
+	config := c.config
+	c.mu.RUnlock()
+	return config
+}
+
+func (c *HTTPClient) loadURLs() []url.URL {
+	c.mu.RLock()
+	urls := c.urls
+	c.mu.RUnlock()
+	return urls
+}
+
+func (c *HTTPClient) loadHTTPClient() *http.Client {
+	c.mu.RLock()
+	client := c.client
+	c.mu.RUnlock()
+	return client
+}
+
+// UpdateURLs updates the running list of URLs.
+func (c *HTTPClient) Update(new HTTPConfig) error {
+	if new.UserAgent == "" {
+		new.UserAgent = "KapacitorInfluxDBClient"
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	old := c.config
+	c.config = new
+	// Replace urls
+	urls, err := parseURLs(new.URLs)
+	if err != nil {
+		return err
+	}
+	c.urls = urls
+	if old.Timeout != new.Timeout || old.Transport != new.Transport {
+		//Replace the client
+		c.client = &http.Client{
+			Timeout:   new.Timeout,
+			Transport: new.Transport,
 		}
 	}
 	return nil
 }
 
-func (c *HTTPClient) checkQuit() bool {
-	select {
-	case <-c.quit:
-		return true
-	default:
-		return false
-	}
-}
-
-type quitError struct{}
-
-func (quitError) Error() string {
-	return "client has quitd"
-}
-
-// Temporary returns whether this error was temporary and should be retried.
-func (quitError) Temporary() bool {
-	return true
+func (c *HTTPClient) url() url.URL {
+	urls := c.loadURLs()
+	i := atomic.LoadInt32(&c.index)
+	i = (i + 1) % int32(len(urls))
+	atomic.StoreInt32(&c.index, i)
+	return urls[i]
 }
 
 func (c *HTTPClient) do(req *http.Request, result interface{}, codes ...int) (*http.Response, error) {
-	if c.checkQuit() {
-		return nil, quitError{}
+	// Get current config
+	config := c.loadConfig()
+	// Set auth credentials
+	cred := config.Credentials
+	switch cred.Method {
+	case NoAuthentication:
+	case UserAuthentication:
+		req.SetBasicAuth(cred.Username, cred.Password)
+	case BearerAuthentication:
+		req.Header.Set("Authorization", "Bearer "+cred.Token)
+	default:
+		return nil, errors.New("unknown authentication method set")
 	}
-	req.Header.Set("User-Agent", c.userAgent)
-	err := c.setAuth(req)
-	if err != nil {
-		return nil, err
-	}
+	// Set user agent
+	req.Header.Set("User-Agent", config.UserAgent)
 
-	resp, err := c.httpClient.Do(req)
+	// Get client
+	client := c.loadHTTPClient()
+
+	// Do request
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -245,19 +268,24 @@ func (c *HTTPClient) do(req *http.Request, result interface{}, codes ...int) (*h
 
 // Ping will check to see if the server is up with an optional timeout on waiting for leader.
 // Ping returns how long the request took, the version of the server it connected to, and an error if one occurred.
-func (c *HTTPClient) Ping(timeout time.Duration) (time.Duration, string, error) {
+func (c *HTTPClient) Ping(ctx context.Context) (time.Duration, string, error) {
 	now := time.Now()
-	u := c.url
+	u := c.url()
 	u.Path = "ping"
-	if timeout > 0 {
-		v := url.Values{}
-		v.Set("wait_for_leader", fmt.Sprintf("%.0fs", timeout.Seconds()))
-		u.RawQuery = v.Encode()
+	if ctx != nil {
+		if dl, ok := ctx.Deadline(); ok {
+			v := url.Values{}
+			v.Set("wait_for_leader", fmt.Sprintf("%.0fs", time.Now().Sub(dl).Seconds()))
+			u.RawQuery = v.Encode()
+		}
 	}
 
 	req, err := http.NewRequest("GET", u.String(), nil)
 	if err != nil {
 		return 0, "", err
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
 	}
 	resp, err := c.do(req, nil, http.StatusNoContent)
 	if err != nil {
@@ -280,7 +308,7 @@ func (c *HTTPClient) Write(bp BatchPoints) error {
 		}
 	}
 
-	u := c.url
+	u := c.url()
 	u.Path = "write"
 	v := url.Values{}
 	v.Set("db", bp.Database())
@@ -333,7 +361,7 @@ type Result struct {
 
 // Query sends a command to the server and returns the Response
 func (c *HTTPClient) Query(q Query) (*Response, error) {
-	u := c.url
+	u := c.url()
 	u.Path = "query"
 	v := url.Values{}
 	v.Set("q", q.Command)
@@ -353,22 +381,10 @@ func (c *HTTPClient) Query(q Query) (*Response, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	return response, nil
-}
-
-// Close releases the HTTPClient's resources.
-func (c *HTTPClient) Close() error {
-	c.transport.CloseIdleConnections()
-	return nil
-}
-
-func (c *HTTPClient) SetToken(token string) {
-	if c.credentials != nil {
-		c.credMu.Lock()
-		c.credentials.Token = token
-		c.credMu.Unlock()
+	if err := response.Error(); err != nil {
+		return nil, err
 	}
+	return response, nil
 }
 
 // BatchPoints is an interface into a batched grouping of points to write into
@@ -513,6 +529,6 @@ func (p Point) Bytes(precision string) []byte {
 // Simple type to create github.com/influxdata/kapacitor/influxdb clients.
 type ClientCreator struct{}
 
-func (ClientCreator) Create(config HTTPConfig) (Client, error) {
+func (ClientCreator) Create(config HTTPConfig) (ClientUpdater, error) {
 	return NewHTTPClient(config)
 }

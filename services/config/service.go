@@ -324,7 +324,19 @@ func (s *Service) overridesForUpdateAction(ua updateAction) ([]Override, func() 
 			return nil
 		}
 
-		return []Override{o}, saveFunc, nil
+		// Get all overrides for the section
+		overrides, err := s.overrides.List(section)
+		if err != nil {
+			return nil, nil, errors.Wrapf(err, "failed to get existing overrides for section %s", ua.section)
+		}
+
+		// replace modified override
+		for i := range overrides {
+			if overrides[i].ID == id {
+				overrides[i] = o
+			}
+		}
+		return overrides, saveFunc, nil
 	} else {
 		// Remove the list of overrides
 		removed := make([]string, len(ua.Remove))

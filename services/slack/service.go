@@ -15,15 +15,15 @@ import (
 )
 
 type Service struct {
-	config atomic.Value
-	logger *log.Logger
+	configValue atomic.Value
+	logger      *log.Logger
 }
 
 func NewService(c Config, l *log.Logger) *Service {
 	s := &Service{
 		logger: l,
 	}
-	s.config.Store(c)
+	s.configValue.Store(c)
 	return s
 }
 
@@ -35,8 +35,8 @@ func (s *Service) Close() error {
 	return nil
 }
 
-func (s *Service) loadConfig() Config {
-	return s.config.Load().(Config)
+func (s *Service) config() Config {
+	return s.configValue.Load().(Config)
 }
 
 func (s *Service) Update(newConfig []interface{}) error {
@@ -46,18 +46,18 @@ func (s *Service) Update(newConfig []interface{}) error {
 	if c, ok := newConfig[0].(Config); !ok {
 		return fmt.Errorf("expected config object to be of type %T, got %T", c, newConfig[0])
 	} else {
-		s.config.Store(c)
+		s.configValue.Store(c)
 	}
 	return nil
 }
 
 func (s *Service) Global() bool {
-	c := s.loadConfig()
+	c := s.config()
 	return c.Global
 }
 
 func (s *Service) StateChangesOnly() bool {
-	c := s.loadConfig()
+	c := s.config()
 	return c.StateChangesOnly
 }
 
@@ -96,7 +96,7 @@ func (s *Service) Alert(channel, message string, level kapacitor.AlertLevel) err
 }
 
 func (s *Service) preparePost(channel, message string, level kapacitor.AlertLevel) (string, io.Reader, error) {
-	c := s.loadConfig()
+	c := s.config()
 
 	if !c.Enabled {
 		return "", nil, errors.New("service is not enabled")

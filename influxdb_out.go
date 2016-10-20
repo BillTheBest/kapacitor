@@ -2,7 +2,6 @@ package kapacitor
 
 import (
 	"bytes"
-	"errors"
 	"log"
 	"sync"
 	"time"
@@ -12,6 +11,7 @@ import (
 	"github.com/influxdata/kapacitor/influxdb"
 	"github.com/influxdata/kapacitor/models"
 	"github.com/influxdata/kapacitor/pipeline"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -32,10 +32,14 @@ func newInfluxDBOutNode(et *ExecutingTask, n *pipeline.InfluxDBOutNode, l *log.L
 	if et.tm.InfluxDBService == nil {
 		return nil, errors.New("no InfluxDB cluster configured cannot use the InfluxDBOutNode")
 	}
+	cli, err := et.tm.InfluxDBService.NewNamedClient(n.Cluster)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get InfluxDB client")
+	}
 	in := &InfluxDBOutNode{
 		node: node{Node: n, et: et, logger: l},
 		i:    n,
-		wb:   newWriteBuffer(int(n.Buffer), n.FlushInterval),
+		wb:   newWriteBuffer(int(n.Buffer), n.FlushInterval, cli),
 	}
 	in.node.runF = in.runOut
 	in.node.stopF = in.stopOut
@@ -55,12 +59,11 @@ func (i *InfluxDBOutNode) runOut([]byte) error {
 
 	// Create the database and retention policy
 	if i.i.CreateFlag {
-		err := DoWhileTemporary(func() error {
-			conn, err := i.et.tm.InfluxDBService.NewNamedClient(i.i.Cluster)
+		err := func() error {
+			cli, err := i.et.tm.InfluxDBService.NewNamedClient(i.i.Cluster)
 			if err != nil {
 				return err
 			}
-			defer conn.Close()
 			var createDb bytes.Buffer
 			createDb.WriteString("CREATE DATABASE ")
 			createDb.WriteString(influxql.QuoteIdent(i.i.Database))
@@ -68,14 +71,12 @@ func (i *InfluxDBOutNode) runOut([]byte) error {
 				createDb.WriteString(" WITH NAME ")
 				createDb.WriteString(influxql.QuoteIdent(i.i.RetentionPolicy))
 			}
-			resp, err := conn.Query(influxdb.Query{Command: createDb.String()})
+			_, err = cli.Query(influxdb.Query{Command: createDb.String()})
 			if err != nil {
-				return err
-			} else if err := resp.Error(); err != nil {
 				return err
 			}
 			return nil
-		})
+		}()
 		if err != nil {
 			i.logger.Printf("E! failed to create database %q on cluster %q: %v", i.i.Database, i.i.Cluster, err)
 		}
@@ -171,7 +172,7 @@ type writeBuffer struct {
 
 	stopping chan struct{}
 	wg       sync.WaitGroup
-	conn     influxdb.Client
+	cli      influxdb.Client
 
 	i *InfluxDBOutNode
 }
@@ -181,8 +182,9 @@ type queueEntry struct {
 	points []influxdb.Point
 }
 
-func newWriteBuffer(size int, flushInterval time.Duration) *writeBuffer {
+func newWriteBuffer(size int, flushInterval time.Duration, cli influxdb.Client) *writeBuffer {
 	return &writeBuffer{
+		cli:           cli,
 		size:          size,
 		flushInterval: flushInterval,
 		flushing:      make(chan struct{}),
@@ -270,21 +272,7 @@ func (w *writeBuffer) writeAll() {
 }
 
 func (w *writeBuffer) write(bp influxdb.BatchPoints) error {
-	err := DoWhileTemporary(func() error {
-		var err error
-		if w.conn == nil {
-			w.conn, err = w.i.et.tm.InfluxDBService.NewNamedClient(w.i.i.Cluster)
-			if err != nil {
-				return err
-			}
-		}
-		err = w.conn.Write(bp)
-		if err != nil {
-			w.conn.Close()
-			w.conn = nil
-		}
-		return err
-	})
+	err := w.cli.Write(bp)
 	if err != nil {
 		w.i.writeErrors.Add(1)
 		return err
