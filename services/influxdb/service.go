@@ -311,7 +311,6 @@ func (s *Service) NewNamedClient(name string) (influxdb.Client, error) {
 
 type influxdbCluster struct {
 	clusterName              string
-	config                   Config
 	influxdbConfig           influxdb.HTTPConfig
 	client                   influxdb.ClientUpdater
 	i                        int
@@ -395,7 +394,6 @@ func newInfluxDBCluster(c Config, hostname, clusterID, subName string, httpPort 
 	}
 	return &influxdbCluster{
 		clusterName:              c.Name,
-		config:                   c,
 		influxdbConfig:           config,
 		configSubs:               subs,
 		exConfigSubs:             exSubs,
@@ -511,7 +509,6 @@ func (c *influxdbCluster) Update(conf Config) error {
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.config = conf
 
 	if conf.InsecureSkipVerify {
 		c.logger.Printf("W! Using InsecureSkipVerify when connecting to InfluxDB @ %v this is insecure!", conf.URLs)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -2491,7 +2492,7 @@ func TestServer_BatchTask(t *testing.T) {
 		}
 	}
 }
-func TestServer_BatchTask_InfluxDBClientExpire(t *testing.T) {
+func TestServer_BatchTask_InfluxDBConfigUpdate(t *testing.T) {
 	c := NewConfig()
 	c.InfluxDB[0].Enabled = true
 	count := 0
@@ -2500,6 +2501,7 @@ func TestServer_BatchTask_InfluxDBClientExpire(t *testing.T) {
 	badCount := 0
 
 	dbBad := NewInfluxDB(func(q string) *iclient.Response {
+		log.Println("D! bad queried")
 		badCount++
 		// Return empty results
 		return &iclient.Response{
@@ -2508,6 +2510,7 @@ func TestServer_BatchTask_InfluxDBClientExpire(t *testing.T) {
 	})
 	defer dbBad.Close()
 	db := NewInfluxDB(func(q string) *iclient.Response {
+		log.Println("D! good queried")
 		stmt, err := influxql.ParseStatement(q)
 		if err != nil {
 			return &iclient.Response{Err: err.Error()}
@@ -2567,6 +2570,9 @@ func TestServer_BatchTask_InfluxDBClientExpire(t *testing.T) {
 		}
 	})
 	defer db.Close()
+	log.Println("D! dbBad", dbBad.URL())
+	log.Println("D! db", db.URL())
+
 	// Set bad URL first
 	c.InfluxDB[0].URLs = []string{dbBad.URL()}
 	s := OpenServer(c)

@@ -331,10 +331,16 @@ func (s *Service) overridesForUpdateAction(ua updateAction) ([]Override, func() 
 		}
 
 		// replace modified override
+		found := false
 		for i := range overrides {
 			if overrides[i].ID == id {
 				overrides[i] = o
+				found = true
+				break
 			}
+		}
+		if !found {
+			overrides = append(overrides, o)
 		}
 		return overrides, saveFunc, nil
 	} else {

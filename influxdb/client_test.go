@@ -73,8 +73,35 @@ func TestClient_Ping(t *testing.T) {
 	}
 }
 
-func TestClient_UpdateURLs(t *testing.T) {
-	t.Fatal("need to write test")
+func TestClient_Update(t *testing.T) {
+	ts0 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var data Response
+		w.WriteHeader(http.StatusNoContent)
+		_ = json.NewEncoder(w).Encode(data)
+	}))
+	defer ts0.Close()
+
+	config := HTTPConfig{URLs: []string{ts0.URL}}
+	c, _ := NewHTTPClient(config)
+
+	_, _, err := c.Ping(nil)
+	if err != nil {
+		t.Errorf("unexpected error.  expected %v, actual %v", nil, err)
+	}
+
+	ts1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var data Response
+		w.WriteHeader(http.StatusNoContent)
+		_ = json.NewEncoder(w).Encode(data)
+	}))
+	defer ts1.Close()
+	config.URLs = []string{ts1.URL}
+	c.Update(config)
+
+	_, _, err = c.Ping(nil)
+	if err != nil {
+		t.Errorf("unexpected error.  expected %v, actual %v", nil, err)
+	}
 }
 
 func TestClient_Concurrent_Use(t *testing.T) {

@@ -190,9 +190,13 @@ func (c *HTTPClient) Update(new HTTPConfig) error {
 	c.urls = urls
 	if old.Timeout != new.Timeout || old.Transport != new.Transport {
 		//Replace the client
+		tr := new.Transport
+		if tr == nil {
+			tr = old.Transport
+		}
 		c.client = &http.Client{
 			Timeout:   new.Timeout,
-			Transport: new.Transport,
+			Transport: tr,
 		}
 	}
 	return nil
