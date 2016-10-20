@@ -46,7 +46,7 @@ VENDOR = "InfluxData"
 DESCRIPTION = "Time series data processing engine"
 
 # SCRIPT START
-go_vet_command = "go tool vet -composites=false -example=false"
+go_vet_command = "go tool vet -composites=false"
 prereqs = [ 'git', 'go' ]
 optional_prereqs = [ 'fpm', 'rpmbuild', 'gpg' ]
 
@@ -287,10 +287,10 @@ def run(command, allow_failure=False, shell=False, printOutput=False):
             out = out.decode('utf-8').strip()
         if p.returncode != 0:
             if allow_failure:
-                logging.warn("Command '{}' failed with error: {}".format(command, out))
+                logging.warn(u"Command '{}' failed with error: {}".format(command, out))
                 return None
             else:
-                logging.error("Command '{}' failed with error: {}".format(command, out))
+                logging.error(u"Command '{}' failed with error: {}".format(command, out))
                 sys.exit(1)
     except OSError as e:
         if allow_failure:
