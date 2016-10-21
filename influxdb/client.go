@@ -34,7 +34,7 @@ type Client interface {
 
 type ClientUpdater interface {
 	Client
-	Update(new HTTPConfig) error
+	Update(new Config) error
 }
 
 // BatchPointsConfig is the config data needed to create an instance of the BatchPoints struct
@@ -60,7 +60,7 @@ type Query struct {
 }
 
 // HTTPConfig is the config data needed to create an HTTP Client
-type HTTPConfig struct {
+type Config struct {
 	// The URL of the InfluxDB server.
 	URLs []string
 
@@ -105,7 +105,7 @@ type Credentials struct {
 // HTTPClient is safe for concurrent use.
 type HTTPClient struct {
 	mu     sync.RWMutex
-	config HTTPConfig
+	config Config
 	urls   []url.URL
 	client *http.Client
 	index  int32
@@ -113,7 +113,7 @@ type HTTPClient struct {
 
 // NewHTTPClient returns a new Client from the provided config.
 // Client is safe for concurrent use by multiple goroutines.
-func NewHTTPClient(conf HTTPConfig) (*HTTPClient, error) {
+func NewHTTPClient(conf Config) (*HTTPClient, error) {
 	if conf.UserAgent == "" {
 		conf.UserAgent = "KapacitorInfluxDBClient"
 	}
@@ -152,7 +152,7 @@ func parseURLs(urlStrs []string) ([]url.URL, error) {
 	return urls, nil
 }
 
-func (c *HTTPClient) loadConfig() HTTPConfig {
+func (c *HTTPClient) loadConfig() Config {
 	c.mu.RLock()
 	config := c.config
 	c.mu.RUnlock()
@@ -174,7 +174,7 @@ func (c *HTTPClient) loadHTTPClient() *http.Client {
 }
 
 // UpdateURLs updates the running list of URLs.
-func (c *HTTPClient) Update(new HTTPConfig) error {
+func (c *HTTPClient) Update(new Config) error {
 	if new.UserAgent == "" {
 		new.UserAgent = "KapacitorInfluxDBClient"
 	}
@@ -533,6 +533,6 @@ func (p Point) Bytes(precision string) []byte {
 // Simple type to create github.com/influxdata/kapacitor/influxdb clients.
 type ClientCreator struct{}
 
-func (ClientCreator) Create(config HTTPConfig) (ClientUpdater, error) {
+func (ClientCreator) Create(config Config) (ClientUpdater, error) {
 	return NewHTTPClient(config)
 }

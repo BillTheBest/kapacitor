@@ -28,7 +28,7 @@ func NewMockInfluxDBService(h http.Handler) *MockInfluxDBService {
 }
 
 func (m *MockInfluxDBService) NewNamedClient(name string) (influxdb.Client, error) {
-	return influxdb.NewHTTPClient(influxdb.HTTPConfig{
+	return influxdb.NewHTTPClient(influxdb.Config{
 		URLs: []string{m.ts.URL},
 	})
 }
@@ -162,16 +162,27 @@ type k8sAutoscale struct {
 	ScalesGetFunc    func(kind, name string) (*k8s.Scale, error)
 	ScalesUpdateFunc func(kind string, scale *k8s.Scale) error
 }
+type k8sScales struct {
+	ScalesGetFunc    func(kind, name string) (*k8s.Scale, error)
+	ScalesUpdateFunc func(kind string, scale *k8s.Scale) error
+}
 
-func (k k8sAutoscale) Client() k8s.Client {
-	return k
+func (k k8sAutoscale) Client() (k8s.Client, error) {
+	return k, nil
 }
 func (k k8sAutoscale) Scales(namespace string) k8s.ScalesInterface {
-	return k
+	return k8sScales{
+		ScalesGetFunc:    k.ScalesGetFunc,
+		ScalesUpdateFunc: k.ScalesUpdateFunc,
+	}
 }
-func (k k8sAutoscale) Get(kind, name string) (*k8s.Scale, error) {
+func (k k8sAutoscale) Update(c k8s.Config) error {
+	return nil
+}
+
+func (k k8sScales) Get(kind, name string) (*k8s.Scale, error) {
 	return k.ScalesGetFunc(kind, name)
 }
-func (k k8sAutoscale) Update(kind string, scale *k8s.Scale) error {
+func (k k8sScales) Update(kind string, scale *k8s.Scale) error {
 	return k.ScalesUpdateFunc(kind, scale)
 }

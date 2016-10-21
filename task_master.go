@@ -115,7 +115,7 @@ type TaskMaster struct {
 		NewTimer(timer.Setter) timer.Timer
 	}
 	K8sService interface {
-		Client() k8s.Client
+		Client() (k8s.Client, error)
 	}
 	LogService LogService
 

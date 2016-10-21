@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -2501,7 +2500,6 @@ func TestServer_BatchTask_InfluxDBConfigUpdate(t *testing.T) {
 	badCount := 0
 
 	dbBad := NewInfluxDB(func(q string) *iclient.Response {
-		log.Println("D! bad queried")
 		badCount++
 		// Return empty results
 		return &iclient.Response{
@@ -2510,7 +2508,6 @@ func TestServer_BatchTask_InfluxDBConfigUpdate(t *testing.T) {
 	})
 	defer dbBad.Close()
 	db := NewInfluxDB(func(q string) *iclient.Response {
-		log.Println("D! good queried")
 		stmt, err := influxql.ParseStatement(q)
 		if err != nil {
 			return &iclient.Response{Err: err.Error()}
@@ -2570,8 +2567,6 @@ func TestServer_BatchTask_InfluxDBConfigUpdate(t *testing.T) {
 		}
 	})
 	defer db.Close()
-	log.Println("D! dbBad", dbBad.URL())
-	log.Println("D! db", db.URL())
 
 	// Set bad URL first
 	c.InfluxDB[0].URLs = []string{dbBad.URL()}
@@ -5182,6 +5177,57 @@ func TestServer_UpdateConfig(t *testing.T) {
 			},
 		},
 		{
+			section: "kubernetes",
+			setDefaults: func(c *server.Config) {
+				c.Kubernetes.APIServers = []string{"http://localhost:80001"}
+			},
+			expDefaultSection: client.ConfigSection{
+				Elements: []client.ConfigElement{{
+					"api-servers": []interface{}{"http://localhost:80001"},
+					"ca-path":     "",
+					"enabled":     false,
+					"in-cluster":  false,
+					"namespace":   "",
+					"token":       false,
+				}},
+			},
+			expDefaultElement: client.ConfigElement{
+				"api-servers": []interface{}{"http://localhost:80001"},
+				"ca-path":     "",
+				"enabled":     false,
+				"in-cluster":  false,
+				"namespace":   "",
+				"token":       false,
+			},
+			updates: []updateAction{
+				{
+					updateAction: client.ConfigUpdateAction{
+						Set: map[string]interface{}{
+							"token": "secret",
+						},
+					},
+					expSection: client.ConfigSection{
+						Elements: []client.ConfigElement{{
+							"api-servers": []interface{}{"http://localhost:80001"},
+							"ca-path":     "",
+							"enabled":     false,
+							"in-cluster":  false,
+							"namespace":   "",
+							"token":       true,
+						}},
+					},
+					expElement: client.ConfigElement{
+						"api-servers": []interface{}{"http://localhost:80001"},
+						"ca-path":     "",
+						"enabled":     false,
+						"in-cluster":  false,
+						"namespace":   "",
+						"token":       true,
+					},
+				},
+			},
+		},
+		{
 			section: "hipchat",
 			setDefaults: func(c *server.Config) {
 				c.HipChat.URL = "http://hipchat.example.com"
@@ -5745,7 +5791,5 @@ func TestServer_UpdateConfig(t *testing.T) {
 				t.Errorf("unexpected update result %d for %s/%s: %v", i, tc.section, element, err)
 			}
 		}
-		// TODO REMOVE THIS
-		break
 	}
 }

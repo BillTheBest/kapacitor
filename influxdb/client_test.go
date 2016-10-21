@@ -17,7 +17,7 @@ func TestClient_Query(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	config := HTTPConfig{URLs: []string{ts.URL}}
+	config := Config{URLs: []string{ts.URL}}
 	c, _ := NewHTTPClient(config)
 
 	query := Query{}
@@ -46,7 +46,7 @@ func TestClient_BasicAuth(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	config := HTTPConfig{URLs: []string{ts.URL}, Credentials: Credentials{Method: UserAuthentication, Username: "username", Password: "password"}}
+	config := Config{URLs: []string{ts.URL}, Credentials: Credentials{Method: UserAuthentication, Username: "username", Password: "password"}}
 	c, _ := NewHTTPClient(config)
 
 	query := Query{}
@@ -64,7 +64,7 @@ func TestClient_Ping(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	config := HTTPConfig{URLs: []string{ts.URL}}
+	config := Config{URLs: []string{ts.URL}}
 	c, _ := NewHTTPClient(config)
 
 	_, _, err := c.Ping(nil)
@@ -81,7 +81,7 @@ func TestClient_Update(t *testing.T) {
 	}))
 	defer ts0.Close()
 
-	config := HTTPConfig{URLs: []string{ts0.URL}}
+	config := Config{URLs: []string{ts0.URL}}
 	c, _ := NewHTTPClient(config)
 
 	_, _, err := c.Ping(nil)
@@ -111,7 +111,7 @@ func TestClient_Concurrent_Use(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	config := HTTPConfig{URLs: []string{ts.URL}}
+	config := Config{URLs: []string{ts.URL}}
 	c, _ := NewHTTPClient(config)
 
 	var wg sync.WaitGroup
@@ -159,7 +159,7 @@ func TestClient_Write(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	config := HTTPConfig{URLs: []string{ts.URL}}
+	config := Config{URLs: []string{ts.URL}}
 	c, _ := NewHTTPClient(config)
 
 	bp, err := NewBatchPoints(BatchPointsConfig{})
@@ -204,7 +204,7 @@ func TestClient_UserAgent(t *testing.T) {
 	for _, test := range tests {
 		var err error
 
-		config := HTTPConfig{URLs: []string{ts.URL}, UserAgent: test.userAgent}
+		config := Config{URLs: []string{ts.URL}, UserAgent: test.userAgent}
 		c, _ := NewHTTPClient(config)
 
 		receivedUserAgent = ""

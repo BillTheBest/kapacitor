@@ -157,7 +157,7 @@ func New(c *Config, buildInfo BuildInfo, logService logging.Interface) (*Server,
 	s.appendDeadmanService()
 
 	// Append config override service before any dynamic services
-	s.appendConfigOverrideService(c)
+	s.appendConfigOverrideService()
 
 	if err := s.appendInfluxDBService(); err != nil {
 		return nil, errors.Wrap(err, "influxdb service")
@@ -165,10 +165,6 @@ func New(c *Config, buildInfo BuildInfo, logService logging.Interface) (*Server,
 	// Append these after InfluxDB because they depend on it
 	s.appendTaskStoreService()
 	s.appendReplayService()
-
-	if err := s.appendK8sService(); err != nil {
-		return nil, errors.Wrap(err, "kubernetes service")
-	}
 
 	// Append Alert integration services
 	s.appendAlertaService()
@@ -181,6 +177,11 @@ func New(c *Config, buildInfo BuildInfo, logService logging.Interface) (*Server,
 	s.appendTalkService()
 	s.appendTelegramService()
 	s.appendVictorOpsService()
+
+	// Append third-party integrations
+	if err := s.appendK8sService(); err != nil {
+		return nil, errors.Wrap(err, "kubernetes service")
+	}
 
 	// Append extra input services
 	s.appendCollectdService()
@@ -217,10 +218,10 @@ func (s *Server) appendStorageService() {
 	s.AppendService("storage", srv)
 }
 
-func (s *Server) appendConfigOverrideService(c *Config) {
-	if c.ConfigOverride.Enabled {
+func (s *Server) appendConfigOverrideService() {
+	if s.config.ConfigOverride.Enabled {
 		l := s.LogService.NewLogger("[config-override] ", log.LstdFlags)
-		srv := config.NewService(c, l, s.configUpdates)
+		srv := config.NewService(s.config, l, s.configUpdates)
 		srv.HTTPDService = s.HTTPDService
 		srv.StorageService = s.StorageService
 
@@ -306,16 +307,15 @@ func (s *Server) appendReplayService() {
 
 func (s *Server) appendK8sService() error {
 	c := s.config.Kubernetes
-	if c.Enabled {
-		l := s.LogService.NewLogger("[kubernetes] ", log.LstdFlags)
-		srv, err := k8s.NewService(c, l)
-		if err != nil {
-			return err
-		}
-
-		s.TaskMaster.K8sService = srv
-		s.AppendService("kubernetes", srv)
+	l := s.LogService.NewLogger("[kubernetes] ", log.LstdFlags)
+	srv, err := k8s.NewService(c, l)
+	if err != nil {
+		return err
 	}
+
+	s.TaskMaster.K8sService = srv
+	s.DynamicServices["kubernetes"] = srv
+	s.AppendService("kubernetes", srv)
 	return nil
 }
 

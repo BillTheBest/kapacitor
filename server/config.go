@@ -49,7 +49,6 @@ type Config struct {
 	InfluxDB       []influxdb.Config `toml:"influxdb" override:"influxdb,element-key=name"`
 	Logging        logging.Config    `toml:"logging"`
 	ConfigOverride config.Config     `toml:"config-override"`
-	Kubernetes     k8s.Config        `toml:"kubernetes"`
 
 	// Input services
 	Graphites []graphite.Config `toml:"graphite"`
@@ -68,6 +67,9 @@ type Config struct {
 	Talk      talk.Config      `toml:"talk" override:"talk"`
 	Telegram  telegram.Config  `toml:"telegram" override:"telegram"`
 	VictorOps victorops.Config `toml:"victorops" override:"victorops"`
+
+	// Third-party integrations
+	Kubernetes k8s.Config `toml:"kubernetes" override:"kubernetes"`
 
 	Reporting reporting.Config `toml:"reporting"`
 	Stats     stats.Config     `toml:"stats"`

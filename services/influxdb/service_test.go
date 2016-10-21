@@ -1198,16 +1198,16 @@ func (a *authService) RevokeSubscriptionAccess(token string) error {
 
 type clientCreator struct {
 	// Index for the order the client was created, matches the order clusters are created.
-	CreateFunc func(influxcli.HTTPConfig) (influxcli.ClientUpdater, error)
+	CreateFunc func(influxcli.Config) (influxcli.ClientUpdater, error)
 
 	// Cient functions passed down to any created client
 	PingFunc   func(ctx context.Context) (time.Duration, string, error)
 	WriteFunc  func(bp influxcli.BatchPoints) error
 	QueryFunc  func(clusterName string, q influxcli.Query) (*influxcli.Response, error)
-	UpdateFunc func(influxcli.HTTPConfig) error
+	UpdateFunc func(influxcli.Config) error
 }
 
-func (c *clientCreator) Create(config influxcli.HTTPConfig) (influxcli.ClientUpdater, error) {
+func (c *clientCreator) Create(config influxcli.Config) (influxcli.ClientUpdater, error) {
 	if c.CreateFunc != nil {
 		return c.CreateFunc(config)
 	}
@@ -1228,7 +1228,7 @@ type influxDBClient struct {
 	PingFunc    func(ctx context.Context) (time.Duration, string, error)
 	WriteFunc   func(bp influxcli.BatchPoints) error
 	QueryFunc   func(clusterName string, q influxcli.Query) (*influxcli.Response, error)
-	UpdateFunc  func(influxcli.HTTPConfig) error
+	UpdateFunc  func(influxcli.Config) error
 }
 
 func (c influxDBClient) Ping(ctx context.Context) (time.Duration, string, error) {
@@ -1249,7 +1249,7 @@ func (c influxDBClient) Query(q influxcli.Query) (*influxcli.Response, error) {
 	}
 	return &influxcli.Response{}, nil
 }
-func (c influxDBClient) Update(config influxcli.HTTPConfig) error {
+func (c influxDBClient) Update(config influxcli.Config) error {
 	if c.UpdateFunc != nil {
 		return c.UpdateFunc(config)
 	}

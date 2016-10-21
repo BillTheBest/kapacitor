@@ -68,7 +68,7 @@ type Service struct {
 		DelRoutes([]httpd.Route)
 	}
 	ClientCreator interface {
-		Create(influxdb.HTTPConfig) (influxdb.ClientUpdater, error)
+		Create(influxdb.Config) (influxdb.ClientUpdater, error)
 	}
 	AuthService interface {
 		GrantSubscriptionAccess(token, db, rp string) error
@@ -311,7 +311,7 @@ func (s *Service) NewNamedClient(name string) (influxdb.Client, error) {
 
 type influxdbCluster struct {
 	clusterName              string
-	influxdbConfig           influxdb.HTTPConfig
+	influxdbConfig           influxdb.Config
 	client                   influxdb.ClientUpdater
 	i                        int
 	configSubs               map[subEntry]bool
@@ -343,7 +343,7 @@ type influxdbCluster struct {
 		NewLogger(string, int) *log.Logger
 	}
 	ClientCreator interface {
-		Create(influxdb.HTTPConfig) (influxdb.ClientUpdater, error)
+		Create(influxdb.Config) (influxdb.ClientUpdater, error)
 	}
 	AuthService interface {
 		GrantSubscriptionAccess(token, db, rp string) error
@@ -416,10 +416,10 @@ func newInfluxDBCluster(c Config, hostname, clusterID, subName string, httpPort 
 	}, nil
 }
 
-func httpConfig(c Config) (influxdb.HTTPConfig, error) {
+func httpConfig(c Config) (influxdb.Config, error) {
 	tlsConfig, err := getTLSConfig(c.SSLCA, c.SSLCert, c.SSLKey, c.InsecureSkipVerify)
 	if err != nil {
-		return influxdb.HTTPConfig{}, errors.Wrap(err, "invalid TLS options")
+		return influxdb.Config{}, errors.Wrap(err, "invalid TLS options")
 	}
 	tr := &http.Transport{
 		TLSClientConfig: tlsConfig,
@@ -432,7 +432,7 @@ func httpConfig(c Config) (influxdb.HTTPConfig, error) {
 			Password: c.Password,
 		}
 	}
-	return influxdb.HTTPConfig{
+	return influxdb.Config{
 		URLs:        c.URLs,
 		Timeout:     time.Duration(c.Timeout),
 		Transport:   tr,
