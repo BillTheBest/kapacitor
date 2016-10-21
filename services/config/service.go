@@ -28,6 +28,7 @@ type ConfigUpdate struct {
 }
 
 type Service struct {
+	enabled bool
 	config  interface{}
 	logger  *log.Logger
 	updates chan<- ConfigUpdate
@@ -47,8 +48,9 @@ type Service struct {
 	}
 }
 
-func NewService(config interface{}, l *log.Logger, updates chan<- ConfigUpdate) *Service {
+func NewService(c Config, config interface{}, l *log.Logger, updates chan<- ConfigUpdate) *Service {
 	return &Service{
+		enabled: c.Enabled,
 		config:  config,
 		logger:  l,
 		updates: updates,
@@ -164,6 +166,10 @@ func sectionAndElementFromID(id string) (section, element string) {
 }
 
 func (s *Service) handleUpdateSection(w http.ResponseWriter, r *http.Request) {
+	if !s.enabled {
+		httpd.HttpError(w, "config override service is not enabled", true, http.StatusForbidden)
+		return
+	}
 	section, element := sectionAndElementFromPath(r.URL.Path)
 	ua := updateAction{
 		section: section,
@@ -178,7 +184,7 @@ func (s *Service) handleUpdateSection(w http.ResponseWriter, r *http.Request) {
 	// Apply sets/deletes to stored overrides
 	overrides, saveFunc, err := s.overridesForUpdateAction(ua)
 	if err != nil {
-		httpd.HttpError(w, fmt.Sprint("failed to apply update:", err), true, http.StatusBadRequest)
+		httpd.HttpError(w, fmt.Sprint("failed to apply update: ", err), true, http.StatusBadRequest)
 		return
 	}
 
@@ -223,6 +229,10 @@ func (s *Service) handleUpdateSection(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) handleGetConfig(w http.ResponseWriter, r *http.Request) {
+	if !s.enabled {
+		httpd.HttpError(w, "config override service is not enabled", true, http.StatusForbidden)
+		return
+	}
 	section, element := sectionAndElementFromPath(r.URL.Path)
 	config, err := s.getConfig(section)
 	if err != nil {
@@ -277,9 +287,12 @@ func (s *Service) overridesForUpdateAction(ua updateAction) ([]Override, func() 
 			if !ok {
 				return nil, nil, fmt.Errorf("unknown section %q", section)
 			}
+			if key == "" {
+				return nil, nil, fmt.Errorf("section %q is not a list, cannot add new element", section)
+			}
 			elementValue, ok := ua.Add[key]
 			if !ok {
-				return nil, nil, fmt.Errorf("mising key %q in \"add\" map", key)
+				return nil, nil, fmt.Errorf("missing key %q in \"add\" map", key)
 			}
 			if str, ok := elementValue.(string); !ok {
 				return nil, nil, fmt.Errorf("expected %q key to be a string, got %T", key, elementValue)

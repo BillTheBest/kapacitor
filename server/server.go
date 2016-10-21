@@ -219,15 +219,13 @@ func (s *Server) appendStorageService() {
 }
 
 func (s *Server) appendConfigOverrideService() {
-	if s.config.ConfigOverride.Enabled {
-		l := s.LogService.NewLogger("[config-override] ", log.LstdFlags)
-		srv := config.NewService(s.config, l, s.configUpdates)
-		srv.HTTPDService = s.HTTPDService
-		srv.StorageService = s.StorageService
+	l := s.LogService.NewLogger("[config-override] ", log.LstdFlags)
+	srv := config.NewService(s.config.ConfigOverride, s.config, l, s.configUpdates)
+	srv.HTTPDService = s.HTTPDService
+	srv.StorageService = s.StorageService
 
-		s.ConfigOverrideService = srv
-		s.AppendService("config", srv)
-	}
+	s.ConfigOverrideService = srv
+	s.AppendService("config", srv)
 }
 
 func (s *Server) appendSMTPService() {

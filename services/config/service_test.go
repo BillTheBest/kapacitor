@@ -47,7 +47,8 @@ type TestConfig struct {
 }
 
 func OpenNewSerivce(testConfig interface{}, updates chan<- config.ConfigUpdate) (*config.Service, *httpdtest.Server) {
-	service := config.NewService(testConfig, log.New(os.Stderr, "[config] ", log.LstdFlags), updates)
+	c := config.NewConfig()
+	service := config.NewService(c, testConfig, log.New(os.Stderr, "[config] ", log.LstdFlags), updates)
 	service.StorageService = storagetest.New()
 	server := httpdtest.NewServer(testing.Verbose())
 	service.HTTPDService = server
@@ -149,6 +150,14 @@ func TestService_UpdateSection(t *testing.T) {
 					Option1: "value",
 				},
 			},
+		},
+		// Try to add element to non list section
+		{
+			body:       `{"add":{"name":"element0","option-1": 7}}`,
+			path:       "/section-a/",
+			expName:    "section-a",
+			expErr:     errors.New(`failed to apply update: section "section-a" is not a list, cannot add new element`),
+			skipUpdate: true,
 		},
 	}
 	testConfig := &TestConfig{
